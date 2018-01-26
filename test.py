@@ -3,7 +3,7 @@ import tensorflow as tf
 input_size = 5
 output_size = 4
 x = tf.placeholder(tf.float32)
-W = tf.Variable([[.3,.1,.5,.7],[.4,.2,.6,.8],[.5,.3,.7,.9],[.6,.4,.8,.2],[.7,.5,.8,.3]],tf.float32)
+W = tf.Variable([[.05,.1,.5,.7],[.04,.2,.6,.8],[.05,.3,.7,.9],[.06,.4,.8,.2],[.07,.5,.8,.3]],tf.float32)
 i = tf.Variable(0)
 sum_z = tf.Variable(tf.zeros([output_size,input_size],tf.float32))
 sum_W = tf.Variable(tf.zeros([output_size,input_size],tf.float32))
@@ -83,12 +83,11 @@ out_ok = tf.where(
                 tf.float32)
             ,
             out_all_2),
-        tf.greater(
+        tf.greater_equal(
             tf.cast(
                 tf.tile(
                     [tf.slice(
-                        tf.concat(
-                            [nx,[tf.divide(c_one,c_zero),tf.divide(c_one,c_zero)]],0),
+                        tf.concat([nx,[tf.divide(c_one,c_zero),tf.divide(c_one,c_zero)]],0),
                         [1],
                         [input_size+1])
                     ],
@@ -99,12 +98,12 @@ out_ok = tf.where(
 out_idx = tf.transpose(tf.concat([[tf.range(0,output_size)],[tf.cast(tf.segment_min(out_ok[:, 1], out_ok[:, 0]),tf.int32)]],0))
 
 
-out = tf.gather_nd(out_all,out_idx)
+out = tf.gather_nd(out_all_2,out_idx)
 
-#print(sess.run(nx))
+print(sess.run(nx,{x:[7,1.,4,2,3]}))
 #print(sess.run(f_sum_z))
 #print(sess.run(f_sum_W))
-#print(sess.run(out_all_2))
-#print(sess.run(out_ok))
-#print(sess.run(out_idx))
+print(sess.run(out_all_2,{x:[7,1.,4,2,3]}))
+print(sess.run(out_ok,{x:[7,1.,4,2,3]}))
+print(sess.run(out_idx,{x:[7,1.,4,2,3]}))
 print(sess.run(out,{x:[7,1.,4,2,3]}))
