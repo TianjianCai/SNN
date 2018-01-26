@@ -6,7 +6,7 @@ class Layer(object):
         self.n_in = n_in
         self.n_out = n_out
         if W is None:
-            W = tf.random_normal([n_in,n_out], 1, .5, tf.float32)
+            W = tf.Variable(tf.random_normal([n_in,n_out], 1, .5, tf.float32))
         i = tf.Variable(0)
         sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
         sum_W = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
@@ -112,4 +112,7 @@ if __name__ == '__main__':
     sess = tf.Session()
     x = tf.placeholder(tf.float32)
     layer = Layer(x,2,4,sess)
-    print(sess.run(layer.output,{x:[1.,2]}))
+    print(sess.run(layer.output,{x:[1,2]}))
+    print(sess.run(layer.W,{x:[1,2]}))
+    sess.run(layer.W.assign([[.05,.1,.5,.7],[.04,.2,.6,.8]]))
+    print(sess.run(layer.W,{x:[1,2]}))
