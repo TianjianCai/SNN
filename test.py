@@ -2,8 +2,8 @@ import tensorflow as tf
 
 input_size = 5
 output_size = 4
-x = tf.Variable([1.,7,4,2,3],tf.float32)
-W = tf.Variable([[.1,.3,.5,.7],[.2,.4,.6,.8],[.3,.5,.7,.9],[.4,.6,.8,.2],[.5,.7,.8,.3]],tf.float32)
+x = tf.placeholder(tf.float32)
+W = tf.Variable([[.3,.1,.5,.7],[.4,.2,.6,.8],[.5,.3,.7,.9],[.6,.4,.8,.2],[.7,.5,.8,.3]],tf.float32)
 i = tf.Variable(0)
 sum_z = tf.Variable(tf.zeros([output_size,input_size],tf.float32))
 sum_W = tf.Variable(tf.zeros([output_size,input_size],tf.float32))
@@ -21,11 +21,32 @@ nW = tf.transpose(tf.gather(W,r_ind))
 nxW = tf.multiply(nx, nW)
 
 def body_z(i,z):
-    z = tf.slice(tf.concat([tf.cast(tf.reduce_sum(tf.slice(nxW,[0,0],[output_size,i+1]),1,True),tf.float32),z],1),[0,0],[output_size,input_size])
+    z = tf.slice(
+        tf.concat(
+            [
+                tf.cast(
+                    tf.reduce_sum(
+                        tf.slice(nxW,[0,0],[output_size,i+1]),
+                        1,True),
+                    tf.float32),
+                z],
+            1),
+        [0,0],[output_size,input_size])
     return [i+1,z]
 
 def body_W(i,z):
-    z = tf.slice(tf.concat([tf.cast(tf.reduce_sum(tf.slice(nW,[0,0],[output_size,i+1]),1,True),tf.float32),z],1),[0,0],[output_size,input_size])
+    z = tf.slice(
+        tf.concat(
+            [
+                tf.cast(
+                    tf.reduce_sum(
+                        tf.slice(
+                            nW,[0,0],[output_size,i+1]),
+                        1,True),
+                    tf.float32),
+                z],
+            1),
+        [0,0],[output_size,input_size])
     return [i+1,z]
 
 def condition(i,z):
@@ -39,7 +60,18 @@ f_sum_z = tf.reverse(n_sum_z,[1])
 f_sum_W = tf.reverse(n_sum_W,[1])
 
 out_all = tf.divide(f_sum_z, tf.subtract(f_sum_W,1))
-out_all_2 = tf.concat([out_all,tf.transpose([tf.tile([tf.divide(c_one,c_zero)],[output_size])])],1)
+out_all_2 = tf.concat(
+    [
+        out_all,
+        tf.transpose(
+            [
+                tf.tile(
+                [tf.divide(c_one,c_zero)],
+                [output_size])
+                ]
+            )
+        ]
+    ,1)
 
 out_ok = tf.where(
     tf.logical_and(
@@ -69,10 +101,10 @@ out_idx = tf.transpose(tf.concat([[tf.range(0,output_size)],[tf.cast(tf.segment_
 
 out = tf.gather_nd(out_all,out_idx)
 
-print(sess.run(nx))
+#print(sess.run(nx))
 #print(sess.run(f_sum_z))
 #print(sess.run(f_sum_W))
-print(sess.run(out_all_2))
+#print(sess.run(out_all_2))
 #print(sess.run(out_ok))
-print(sess.run(out_idx))
-print(sess.run(out))
+#print(sess.run(out_idx))
+print(sess.run(out,{x:[7,1.,4,2,3]}))
