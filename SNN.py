@@ -110,9 +110,9 @@ class Layer(object):
         
 if __name__ == '__main__':
     sess = tf.Session()
-    x = tf.placeholder(tf.float32)
-    layer = Layer(x,2,4,sess)
-    print(sess.run(layer.output,{x:[1,2]}))
-    print(sess.run(layer.W,{x:[1,2]}))
-    sess.run(layer.W.assign([[.05,.1,.5,.7],[.04,.2,.6,.8]]))
-    print(sess.run(layer.W,{x:[1,2]}))
+    input = tf.placeholder(tf.float32)
+    l1 = Layer(input,2,4,sess)
+    l2 = Layer(l1.output,4,2,sess)
+    print(sess.run(l2.output,{input:[1,3]}))
+    print(sess.run(l1.W,{input:[1,2]}))
+    print(sess.run(l2.W,{input:[1,2]}))
