@@ -115,4 +115,6 @@ if __name__ == '__main__':
     l2 = Layer(l1.output,4,2,sess)
     print(sess.run(l2.output,{input:[1,3]}))
     print(sess.run(l1.W,{input:[1,2]}))
+    sess.run(tf.assign(l1.W,[[.05,.1,.5,.7],[.04,.2,.6,.8]]))
+    print(sess.run(l1.W,{input:[1,2]}))
     print(sess.run(l2.W,{input:[1,2]}))
