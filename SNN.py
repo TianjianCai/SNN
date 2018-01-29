@@ -1,4 +1,6 @@
 import tensorflow as tf
+from random import *
+import math
 
 class Layer(object):
     def __init__(self,input,n_in,n_out,sess, W=None):
@@ -107,14 +109,69 @@ class Layer(object):
             out = tf.gather_nd(out_all_2,out_idx)
             return out
         self.output = cal_out()
+
+def w_sum_cost(W):
+    zero_colume = tf.zeros([tf.shape(W)[0],1],tf.float32)
+    sum_weight = tf.reduce_sum(W, 1, True)
+    sum_weight_sub = tf.subtract(1., sum_weight)
+    sum_weight_all = tf.reduce_max(tf.concat([zero_colume,sum_weight_sub], 1), 1,True)
+    cost = tf.reduce_sum(sum_weight_all, 0, False)
+    return cost
+
+def loss_func(output,true_index):
+    z1 = tf.exp(tf.subtract(0., output[true_index]))
+    z2 = tf.reduce_sum(tf.exp(tf.subtract(0., output)), 0, False)
+    loss = tf.log(tf.divide(z1,z2))
+    return loss
+
+def L2_func(W):
+    w_sqr = tf.square(W)
+    W2 = tf.reduce_sum(w_sqr)
+    return W2
         
 if __name__ == '__main__':
+    
+    K = 10.
+    K2 = 0.
+    training_epochs = 1000
+    learning_rate = 0.1
+    
     sess = tf.Session()
     input = tf.placeholder(tf.float32)
+    
     l1 = Layer(input,2,4,sess)
     l2 = Layer(l1.output,4,2,sess)
-    print(sess.run(l2.output,{input:[1,3]}))
-    print(sess.run(l1.W,{input:[1,2]}))
-    sess.run(tf.assign(l1.W,[[.05,.1,.5,.7],[.04,.2,.6,.8]]))
-    print(sess.run(l1.W,{input:[1,2]}))
-    print(sess.run(l2.W,{input:[1,2]}))
+    
+    def cost_func(true_index):
+        return tf.reduce_sum([[loss_func(l2.output,true_index)],tf.multiply(K, w_sum_cost(l1.W)),tf.multiply(K, w_sum_cost(l2.W)),[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K2, L2_func(l2.W))]])
+    
+    print('start training...')
+    
+    for epoch in range(training_epochs):
+        train_input = [randint(0,1),randint(0,1)]
+        if train_input[0] == train_input[1]:
+            train_output = 0
+        else:
+            train_output = 1
+        train_input = [math.exp(train_input[0]),math.exp(train_input[1])]
+        if epoch % 1 == 0:
+            print('epoch '+repr(epoch)+', cost = '+repr(sess.run(cost_func(train_output),{input:train_input})))
+        #print('i0: '+repr(train_input[0])+' i1: '+repr(train_input[1])+' o: '+repr(train_output))
+        g_W1,g_W2 = tf.gradients(cost_func(train_output),[l1.W,l2.W])
+        n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.multiply(tf.ones_like(g_W1.values),1),g_W1.values)
+        n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.multiply(tf.ones_like(g_W2.values),1),g_W2.values)
+        f_g_W1 = tf.multiply(tf.cond(tf.equal(0.,tf.reduce_sum(n_g_W1)),lambda:tf.divide(n_g_W1,1.),lambda:tf.divide(n_g_W1,tf.reduce_sum(n_g_W1))),learning_rate)
+        f_g_W2 = tf.multiply(tf.cond(tf.equal(0.,tf.reduce_sum(n_g_W2)),lambda:tf.divide(n_g_W2,1.),lambda:tf.divide(n_g_W2,tf.reduce_sum(n_g_W2))),learning_rate)
+        
+        #print(sess.run(n_g_W1,{input:train_input}))
+        #print(sess.run(n_g_W2,{input:train_input}))
+        
+        print(sess.run(f_g_W1,{input:train_input}))
+        print(sess.run(f_g_W2,{input:train_input}))
+        
+        print(sess.run(tf.scatter_sub(l1.W,g_W1.indices,f_g_W1),{input:train_input}))
+        print(sess.run(tf.scatter_sub(l2.W,g_W2.indices,f_g_W2),{input:train_input}))
+    
+    print(sess.run(l1.W))
+    print(sess.run(l2.W))
+    
