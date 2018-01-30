@@ -7,8 +7,10 @@ class Layer(object):
         self.input = input
         self.n_in = n_in
         self.n_out = n_out
+        
         if W is None:
             W = tf.Variable(tf.random_normal([n_in,n_out], 1, .5, tf.float32))
+        self.tmp_W = tf.Variable(tf.zeros_like(W))
         i = tf.Variable(0)
         sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
         sum_W = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
@@ -107,7 +109,8 @@ class Layer(object):
 
             out_idx = tf.transpose(tf.concat([[tf.range(0,self.n_out)],[tf.cast(tf.segment_min(out_ok[:, 1], out_ok[:, 0]),tf.int32)]],0))
             out = tf.gather_nd(out_all_2,out_idx)
-            return out
+            output = tf.where(out>100,tf.multiply(tf.ones_like(out),100),out)
+            return output
         self.output = cal_out()
 
 def w_sum_cost(W):
@@ -146,21 +149,21 @@ if __name__ == '__main__':
         return tf.reduce_sum([[loss_func(l2.output,true_index)],[tf.multiply(K, w_sum_cost(l1.W))],[tf.multiply(K, w_sum_cost(l2.W))],[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K2, L2_func(l2.W))]])
     
     print('start training...')
-    
+    i=0
     for epoch in range(training_epochs):
         train_input = [[math.exp(0),math.exp(0)],[math.exp(0),math.exp(1)],[math.exp(1),math.exp(0)],[math.exp(1),math.exp(1)]]
         train_output = [0,1,1,0]
-        if epoch % 1 == 0:
-            print('epoch '+repr(epoch)+', cost = '+repr(sess.run(cost_func(train_output[epoch % 4]),{input:train_input[epoch%4]})))
+        #if epoch % 1 == 0:
+            #print('epoch '+repr(epoch)+', cost = '+repr(sess.run(cost_func(train_output[epoch % 4]),{input:train_input[epoch%4]})))
         #print('i0: '+repr(train_input[0])+' i1: '+repr(train_input[1])+' o: '+repr(train_output))
         
         g_W1,g_W2 = tf.gradients(cost_func(train_output[epoch % 4]),[l1.W,l2.W])
         
-        n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values)),g_W1.values)
-        n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values)),g_W2.values)
+        n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values),0.0,0.1),g_W1.values)
+        n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values),0.0,0.1),g_W2.values)
         
-        f_g_W1 = tf.divide(n_g_W1,tf.sqrt(tf.reduce_sum(tf.square(n_g_W1)))+1e-9)
-        f_g_W2 = tf.divide(n_g_W2,tf.sqrt(tf.reduce_sum(tf.square(n_g_W2)))+1e-9)
+        #f_g_W1 = tf.divide(n_g_W1,tf.sqrt(tf.reduce_sum(tf.square(n_g_W1)))+1e-9)
+        #f_g_W2 = tf.divide(n_g_W2,tf.sqrt(tf.reduce_sum(tf.square(n_g_W2)))+1e-9)
         
         #print(sess.run(g_W1.values,{input:train_input[epoch % 4]}))
         #print(sess.run(g_W2.values,{input:train_input[epoch % 4]}))
@@ -171,8 +174,18 @@ if __name__ == '__main__':
         #print(sess.run(f_g_W1,{input:train_input[epoch % 4]}))
         #print(sess.run(f_g_W2,{input:train_input[epoch % 4]}))
         
-        print(sess.run(tf.scatter_add(l1.W,g_W1.indices,tf.multiply(f_g_W1,learning_rate)),{input:train_input[epoch%4]}))
-        print(sess.run(tf.scatter_add(l2.W,g_W2.indices,tf.multiply(f_g_W2,learning_rate)),{input:train_input[epoch%4]}))
+        sess.run(tf.scatter_add(l1.tmp_W,g_W1.indices,n_g_W1),{input:train_input[epoch%4]})
+        sess.run(tf.scatter_add(l2.tmp_W,g_W2.indices,n_g_W2),{input:train_input[epoch%4]})
+        
+        if epoch % 4 == 0:
+            print('\nepoch '+repr(i)+', cost = '+repr(sess.run(cost_func(train_output[epoch%4]),{input:train_input[epoch%4]}))+', '+repr(sess.run(cost_func(train_output[(epoch+1)%4]),{input:train_input[(epoch+1)%4]}))+', '+repr(sess.run(cost_func(train_output[(epoch+2) % 4]),{input:train_input[(epoch+2)%4]}))+', '+repr(sess.run(cost_func(train_output[(epoch+3) % 4]),{input:train_input[(epoch+3)%4]})))
+            sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-9)))
+            sess.run(tf.assign(l2.tmp_W,tf.divide(l2.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l2.tmp_W)))+1e-9)))
+            print(sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate)))))
+            print(sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate)))))
+            sess.run(tf.assign(l1.tmp_W,tf.zeros_like(l1.W)))
+            sess.run(tf.assign(l2.tmp_W,tf.zeros_like(l2.W)))
+            i=i+1
     
     print(sess.run(l1.W))
     print(sess.run(l2.W))
