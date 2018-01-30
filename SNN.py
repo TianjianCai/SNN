@@ -109,7 +109,7 @@ class Layer(object):
 
             out_idx = tf.transpose(tf.concat([[tf.range(0,self.n_out)],[tf.cast(tf.segment_min(out_ok[:, 1], out_ok[:, 0]),tf.int32)]],0))
             out = tf.gather_nd(out_all_2,out_idx)
-            output = tf.where(out>100,tf.multiply(tf.ones_like(out),100),out)
+            output = tf.where(out>1e5,tf.multiply(tf.ones_like(out),1e5),out)
             return output
         self.output = cal_out()
 
@@ -124,7 +124,7 @@ def w_sum_cost(W):
 def loss_func(output,true_index):
     z1 = tf.exp(tf.subtract(0., output[true_index]))
     z2 = tf.reduce_sum(tf.exp(tf.subtract(0., output)), 0, False)
-    loss = tf.log(tf.divide(z1,z2+1e-9))
+    loss = tf.subtract(0.,tf.log(tf.divide(z1,z2+1e-9)))
     return loss
 
 def L2_func(W):
@@ -137,9 +137,12 @@ if __name__ == '__main__':
     K = 10.
     K2 = 0.
     training_epochs = 1000
-    learning_rate = 0.1
+    learning_rate = 0.005
     
-    sess = tf.Session()
+    config = tf.ConfigProto(
+        device_count = {'GPU': 0}
+    )
+    sess = tf.Session(config=config)
     input = tf.placeholder(tf.float32)
     
     l1 = Layer(input,2,4,sess)
@@ -159,8 +162,11 @@ if __name__ == '__main__':
         
         g_W1,g_W2 = tf.gradients(cost_func(train_output[epoch % 4]),[l1.W,l2.W])
         
-        n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values),0.0,0.1),g_W1.values)
-        n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values),0.0,0.1),g_W2.values)
+        n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values),0.0,0.01),g_W1.values)
+        n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values),0.0,0.01),g_W2.values)
+        
+        #n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.zeros_like(g_W1.values),g_W1.values)
+        #n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.zeros_like(g_W2.values),g_W2.values)
         
         #f_g_W1 = tf.divide(n_g_W1,tf.sqrt(tf.reduce_sum(tf.square(n_g_W1)))+1e-9)
         #f_g_W2 = tf.divide(n_g_W2,tf.sqrt(tf.reduce_sum(tf.square(n_g_W2)))+1e-9)
