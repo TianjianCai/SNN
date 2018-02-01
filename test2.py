@@ -1,6 +1,7 @@
 import tensorflow as tf
 import math
 
+
 class Layer(object):
     def __init__(self,input,n_in,n_out,sess, W=None):
         self.input = input
