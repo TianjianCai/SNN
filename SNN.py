@@ -236,7 +236,7 @@ if __name__ == '__main__':
                 if np.argmin(act_output,0) == test_output:
                     right_count = right_count + 1.
                 k=k+1
-            accuracy = right_count//50.
+            accuracy = right_count/50.
             #end testing
             
             print('\nepoch '+repr(i)+', accuracy = '+repr(accuracy)+', cost = '+repr(sess.run(cost_func(test_output),{input:test_input})))
