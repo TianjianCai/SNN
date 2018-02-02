@@ -14,7 +14,7 @@ class Layer(object):
         self.n_out = n_out
         
         if W is None:
-            W = tf.Variable(tf.random_normal([n_in,n_out], 1./n_in+0.1, .1, tf.float32))
+            W = tf.Variable(tf.random_normal([n_in,n_out], 1/n_in+0.1, 0.05, tf.float32))
         self.tmp_W = tf.Variable(tf.zeros_like(W))
         i = tf.Variable(0)
         sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     K = 100.
     K2 = 0.001
     training_epochs = 10000
-    learning_rate = 0.01
+    learning_rate = 1
     
     np.set_printoptions(threshold=np.inf)  
     
@@ -214,38 +214,40 @@ if __name__ == '__main__':
         if epoch % 10 == 0:
             
             k=0 #Start testing
-            right_count = 0.
+            right_count = float(0)
+            xs, ys = mnist.train.next_batch(50)
             while k<50:
-                xs, ys = mnist.train.next_batch(1)
-                xs = xs[0]
-                new_xs = []
-                for x in xs:
+                each_xs = xs[k]
+                each_ys = ys[k]
+                new_xs_2 = []
+                for x in each_xs:
                     if x > 0.5:
-                        new_xs.append(6.0)
+                        new_xs_2.append(6.0)
                     if x <= 0.5:
-                        new_xs.append(1.0)
-                test_input = new_xs
+                        new_xs_2.append(1.0)
+                test_input = new_xs_2
                 j = 0
-                while j < batch_ys.shape[1]:
-                    if batch_ys[0, j] == 1:
-                        new_ys = j
+                while j < each_ys.shape[0]:
+                    if each_ys[j] == 1:
+                        new_ys_2 = j
+                        #print(new_ys)
                         break
                     j = j+1
-                test_output = new_ys
+                test_output = new_ys_2
                 act_output = sess.run(l3.output,{input:test_input})
                 if np.argmin(act_output,0) == test_output:
-                    right_count = right_count + 1.
+                    right_count = right_count + float(1)
                 k=k+1
-            accuracy = right_count/50.
+            accuracy = right_count/float(50)
             #end testing
             
             print('\nepoch '+repr(i)+', accuracy = '+repr(accuracy)+', cost = '+repr(sess.run(cost_func(test_output),{input:test_input})))
             sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-20)))
             sess.run(tf.assign(l2.tmp_W,tf.divide(l2.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l2.tmp_W)))+1e-20)))
             sess.run(tf.assign(l3.tmp_W,tf.divide(l3.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l3.tmp_W)))+1e-20)))
-            sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate))))
-            sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate))))
-            sess.run(tf.assign(l3.W, tf.subtract(l3.W,tf.multiply(l3.tmp_W,learning_rate))))
+            sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate)/(i+1))))
+            sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate)/(i+1))))
+            sess.run(tf.assign(l3.W, tf.subtract(l3.W,tf.multiply(l3.tmp_W,learning_rate)/(i+1))))
             sess.run(tf.assign(l1.tmp_W,tf.zeros_like(l1.W)))
             sess.run(tf.assign(l2.tmp_W,tf.zeros_like(l2.W)))
             sess.run(tf.assign(l3.tmp_W,tf.zeros_like(l3.W)))
