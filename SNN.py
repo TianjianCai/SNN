@@ -2,6 +2,7 @@ import tensorflow as tf
 from random import *
 import math
 import numpy as np
+import time
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
@@ -13,7 +14,7 @@ class Layer(object):
         self.n_out = n_out
         
         if W is None:
-            W = tf.Variable(tf.random_normal([n_in,n_out], 1, .5, tf.float32))
+            W = tf.Variable(tf.random_normal([n_in,n_out], 1./n_in+0.1, .1, tf.float32))
         self.tmp_W = tf.Variable(tf.zeros_like(W))
         i = tf.Variable(0)
         sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
@@ -140,11 +141,13 @@ if __name__ == '__main__':
     
     K = 100.
     K2 = 0.001
-    training_epochs = 1000
+    training_epochs = 10000
     learning_rate = 0.01
     
+    np.set_printoptions(threshold=np.inf)  
+    
     config = tf.ConfigProto(
-        device_count = {'GPU': 0}
+        device_count = {'GPU': 1}
     )
     sess = tf.Session(config=config)
     input = tf.placeholder(tf.float32)
@@ -159,6 +162,7 @@ if __name__ == '__main__':
     
     print('start training...')
     i=0
+    start_time = time.time()
     for epoch in range(training_epochs):
         batch_xs, batch_ys = mnist.train.next_batch(1)
         new_xs = batch_xs[0]
@@ -171,7 +175,6 @@ if __name__ == '__main__':
         train_input = new_new_xs
         noise = np.random.normal(0, 0.05, np.shape(new_new_xs))
         train_input = train_input + noise
-        train_input = train_input
         #print(train_input)
         #train_input = [[math.exp(0),math.exp(0)],[math.exp(0),math.exp(1)],[math.exp(1),math.exp(0)],[math.exp(1),math.exp(1)]]
         j = 0
@@ -208,17 +211,58 @@ if __name__ == '__main__':
         sess.run(tf.scatter_add(l1.tmp_W,g_W1.indices,n_g_W1),{input:train_input})
         sess.run(tf.scatter_add(l2.tmp_W,g_W2.indices,n_g_W2),{input:train_input})
         sess.run(tf.scatter_add(l3.tmp_W,g_W3.indices,n_g_W3),{input:train_input})
-        if epoch % 1 == 0:
-            print('\nepoch '+repr(i)+', cost = '+repr(sess.run(cost_func(train_output),{input:train_input})))
-            sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-9)))
-            sess.run(tf.assign(l2.tmp_W,tf.divide(l2.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l2.tmp_W)))+1e-9)))
+        if epoch % 10 == 0:
+            
+            k=0 #Start testing
+            right_count = 0.
+            while k<50:
+                xs, ys = mnist.train.next_batch(1)
+                xs = xs[0]
+                new_xs = []
+                for x in xs:
+                    if x > 0.5:
+                        new_xs.append(6.0)
+                    if x <= 0.5:
+                        new_xs.append(1.0)
+                test_input = new_xs
+                j = 0
+                while j < batch_ys.shape[1]:
+                    if batch_ys[0, j] == 1:
+                        new_ys = j
+                        break
+                    j = j+1
+                test_output = new_ys
+                act_output = sess.run(l3.output,{input:test_input})
+                if np.argmin(act_output,0) == test_output:
+                    right_count = right_count + 1.
+                k=k+1
+            accuracy = right_count//50.
+            #end testing
+            
+            print('\nepoch '+repr(i)+', accuracy = '+repr(accuracy)+', cost = '+repr(sess.run(cost_func(test_output),{input:test_input})))
+            sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-20)))
+            sess.run(tf.assign(l2.tmp_W,tf.divide(l2.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l2.tmp_W)))+1e-20)))
+            sess.run(tf.assign(l3.tmp_W,tf.divide(l3.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l3.tmp_W)))+1e-20)))
             sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate))))
             sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate))))
             sess.run(tf.assign(l3.W, tf.subtract(l3.W,tf.multiply(l3.tmp_W,learning_rate))))
             sess.run(tf.assign(l1.tmp_W,tf.zeros_like(l1.W)))
             sess.run(tf.assign(l2.tmp_W,tf.zeros_like(l2.W)))
             sess.run(tf.assign(l3.tmp_W,tf.zeros_like(l3.W)))
+            W1_print = np.array(sess.run(l1.W))
+            W2_print = np.array(sess.run(l2.W))
+            W3_print = np.array(sess.run(l3.W))
+            #print(W1_print)
+            #print(W2_print)
+            #print(W3_print)
+            with open('weight.txt','w') as f:
+                f.write(repr(W1_print)+';\n'+repr(W2_print)+';\n'+repr(W3_print))
+                print('file write successed')
+                f.close()
             i=i+1
+            duration_time = time.time() - start_time
+            print('duration time is: ' + repr(duration_time) + 's')
+            start_time = time.time()
     
     print(sess.run(l1.W))
     print(sess.run(l2.W))
