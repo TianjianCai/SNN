@@ -1,9 +1,11 @@
 import tensorflow as tf
-from random import *
+import random
 import math
 import numpy as np
 import time
 from tensorflow.examples.tutorials.mnist import input_data
+from tensorflow.python.keras._impl.keras.backend import switch
+from tensorflow.python.ops.variables import variables_initializer
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
 
@@ -139,10 +141,10 @@ def L2_func(W):
         
 if __name__ == '__main__':
     
-    K = 100.
-    K2 = 0.001
-    training_epochs = 10000
-    learning_rate = 1
+    K = 10.
+    K2 = 0.00
+    training_epochs = 1000
+    learning_rate = 0.05
     
     np.set_printoptions(threshold=np.inf)  
     
@@ -150,122 +152,64 @@ if __name__ == '__main__':
         device_count = {'GPU': 1}
     )
     sess = tf.Session(config=config)
+    
     input = tf.placeholder(tf.float32)
+    train_output = tf.placeholder(tf.int32)
     
-    l1 = Layer(input,784,400,sess)
-    l2 = Layer(l1.output,400,400,sess)
-    l3 = Layer(l2.output,400,10,sess)
+    xs = [math.exp(0),math.exp(0)]
+    ys = 0
     
-    def cost_func(true_index):
-        #return tf.reduce_sum([[loss_func(l2.output,true_index)],[tf.multiply(K, w_sum_cost(l1.W))],[tf.multiply(K, w_sum_cost(l2.W))],[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K2, L2_func(l2.W))]])
-        return tf.reduce_sum([[loss_func(l3.output,true_index)],[tf.multiply(K, w_sum_cost(l1.W))],[tf.multiply(K, w_sum_cost(l2.W))],[tf.multiply(K, w_sum_cost(l3.W))],[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K2, L2_func(l2.W))],[tf.multiply(K2, L2_func(l3.W))]])
+    t_input = xs
+    t_output = ys
+    
+    l1 = Layer(input,2,4,sess)
+    l2 = Layer(l1.output,4,2,sess)
+    
+    cost = tf.reduce_sum([[loss_func(l2.output,train_output)],[tf.multiply(K, w_sum_cost(l1.W))],[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K, w_sum_cost(l2.W))],[tf.multiply(K2, L2_func(l2.W))]])
+
+    g_W1,g_W2 = tf.gradients(cost,[l1.W,l2.W])
+    n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values),0.0,0.01),g_W1.values)
+    n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values),0.0,0.01),g_W2.values)
+    update1 = tf.scatter_add(l1.tmp_W,g_W1.indices,n_g_W1)
+    update2 = tf.scatter_add(l2.tmp_W,g_W2.indices,n_g_W2)
+    def commit1():
+        s1 = sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-20)))
+        s2 = sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate))))
+        s3 = sess.run(tf.assign(l1.tmp_W,tf.zeros_like(l1.W)))
+        return s2
+    def commit2():
+        s1 = sess.run(tf.assign(l2.tmp_W,tf.divide(l2.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l2.tmp_W)))+1e-20)))
+        s2 = sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate))))
+        s3 = sess.run(tf.assign(l2.tmp_W,tf.zeros_like(l2.W)))
+        return s2
     
     print('start training...')
     i=0
-    start_time = time.time()
     for epoch in range(training_epochs):
-        batch_xs, batch_ys = mnist.train.next_batch(1)
-        new_xs = batch_xs[0]
-        new_new_xs = []
-        for x in new_xs:
-            if x > 0.5:
-                new_new_xs.append(6.0)
-            if x <= 0.5:
-                new_new_xs.append(1.0)
-        train_input = new_new_xs
-        noise = np.random.normal(0, 0.05, np.shape(new_new_xs))
-        train_input = train_input + noise
-        #print(train_input)
-        #train_input = [[math.exp(0),math.exp(0)],[math.exp(0),math.exp(1)],[math.exp(1),math.exp(0)],[math.exp(1),math.exp(1)]]
-        j = 0
-        while j < batch_ys.shape[1]:
-            if batch_ys[0, j] == 1:
-                new_ys = j
-            j = j+1
-        train_output = new_ys
-        #train_output = [0,1,1,0]
-        #if epoch % 1 == 0:
-            #print('epoch '+repr(epoch)+', cost = '+repr(sess.run(cost_func(train_output[epoch % 4]),{input:train_input[epoch%4]})))
-        #print('i0: '+repr(train_input[0])+' i1: '+repr(train_input[1])+' o: '+repr(train_output))
+        if epoch%4==0:
+            t_input = [math.exp(0)+random.uniform(-0.1,0.1),math.exp(0)+random.uniform(-0.1,0.1)]
+            t_output = 0
+        if epoch%4==1:
+            t_input = [math.exp(1)+random.uniform(-0.1,0.1),math.exp(0)+random.uniform(-0.1,0.1)]
+            t_output = 1
+        if epoch%4==2:
+            t_input = [math.exp(0)+random.uniform(-0.1,0.1),math.exp(1)+random.uniform(-0.1,0.1)]
+            t_output = 1
+        if epoch%4==3:
+            t_input = [math.exp(1)+random.uniform(-0.1,0.1),math.exp(1)+random.uniform(-0.1,0.1)]
+            t_output = 0
         
-        #g_W1,g_W2 = tf.gradients(cost_func(train_output[epoch % 4]),[l1.W,l2.W])
-        g_W1,g_W2,g_W3 = tf.gradients(cost_func(train_output),[l1.W,l2.W,l3.W])
-        n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values),0.0,0.01),g_W1.values)
-        n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values),0.0,0.01),g_W2.values)
-        n_g_W3 = tf.where(tf.is_nan(g_W3.values),tf.random_normal(tf.shape(g_W3.values),0.0,0.01),g_W3.values)
-        #n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.zeros_like(g_W1.values),g_W1.values)
-        #n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.zeros_like(g_W2.values),g_W2.values)
+        sess.run(update1,{input:t_input,train_output:t_output})
+        sess.run(update2,{input:t_input,train_output:t_output})
         
-        #f_g_W1 = tf.divide(n_g_W1,tf.sqrt(tf.reduce_sum(tf.square(n_g_W1)))+1e-9)
-        #f_g_W2 = tf.divide(n_g_W2,tf.sqrt(tf.reduce_sum(tf.square(n_g_W2)))+1e-9)
         
-        #print(sess.run(g_W1.values,{input:train_input[epoch % 4]}))
-        #print(sess.run(g_W2.values,{input:train_input[epoch % 4]}))
-        
-        #print(sess.run(n_g_W1,{input:train_input[epoch % 4]}))
-        #print(sess.run(n_g_W2,{input:train_input[epoch % 4]}))
-        
-        #print(sess.run(f_g_W1,{input:train_input[epoch % 4]}))
-        #print(sess.run(f_g_W2,{input:train_input[epoch % 4]}))
-        
-        sess.run(tf.scatter_add(l1.tmp_W,g_W1.indices,n_g_W1),{input:train_input})
-        sess.run(tf.scatter_add(l2.tmp_W,g_W2.indices,n_g_W2),{input:train_input})
-        sess.run(tf.scatter_add(l3.tmp_W,g_W3.indices,n_g_W3),{input:train_input})
-        if epoch % 10 == 0:
+        if epoch % 4 == 0:
             
-            k=0 #Start testing
-            right_count = float(0)
-            xs, ys = mnist.train.next_batch(50)
-            while k<50:
-                each_xs = xs[k]
-                each_ys = ys[k]
-                new_xs_2 = []
-                for x in each_xs:
-                    if x > 0.5:
-                        new_xs_2.append(6.0)
-                    if x <= 0.5:
-                        new_xs_2.append(1.0)
-                test_input = new_xs_2
-                j = 0
-                while j < each_ys.shape[0]:
-                    if each_ys[j] == 1:
-                        new_ys_2 = j
-                        #print(new_ys)
-                        break
-                    j = j+1
-                test_output = new_ys_2
-                act_output = sess.run(l3.output,{input:test_input})
-                if np.argmin(act_output,0) == test_output:
-                    right_count = right_count + float(1)
-                k=k+1
-            accuracy = right_count/float(50)
-            #end testing
-            
-            print('\nepoch '+repr(i)+', accuracy = '+repr(accuracy)+', cost = '+repr(sess.run(cost_func(test_output),{input:test_input})))
-            sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-20)))
-            sess.run(tf.assign(l2.tmp_W,tf.divide(l2.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l2.tmp_W)))+1e-20)))
-            sess.run(tf.assign(l3.tmp_W,tf.divide(l3.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l3.tmp_W)))+1e-20)))
-            sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate)/(i+1))))
-            sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate)/(i+1))))
-            sess.run(tf.assign(l3.W, tf.subtract(l3.W,tf.multiply(l3.tmp_W,learning_rate)/(i+1))))
-            sess.run(tf.assign(l1.tmp_W,tf.zeros_like(l1.W)))
-            sess.run(tf.assign(l2.tmp_W,tf.zeros_like(l2.W)))
-            sess.run(tf.assign(l3.tmp_W,tf.zeros_like(l3.W)))
-            W1_print = np.array(sess.run(l1.W))
-            W2_print = np.array(sess.run(l2.W))
-            W3_print = np.array(sess.run(l3.W))
-            #print(W1_print)
-            #print(W2_print)
-            #print(W3_print)
-            with open('weight.txt','w') as f:
-                f.write(repr(W1_print)+';\n'+repr(W2_print)+';\n'+repr(W3_print))
-                print('file write successed')
-                f.close()
+            print('\nepoch '+repr(i)+', cost = '+repr(sess.run(cost,{input:[1.,1.],train_output:0}))+', '+repr(sess.run(cost,{input:[2.72,1.],train_output:1}))+', '+repr(sess.run(cost,{input:[1.,2.72],train_output:1}))+', '+repr(sess.run(cost,{input:[2.72,2.72],train_output:0})))
+            commit1()
+            commit2()
             i=i+1
-            duration_time = time.time() - start_time
-            print('duration time is: ' + repr(duration_time) + 's')
-            start_time = time.time()
+            
     
     print(sess.run(l1.W))
     print(sess.run(l2.W))
-    print(sess.run(l3.W))
