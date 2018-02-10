@@ -184,6 +184,10 @@ if __name__ == '__main__':
         return s2
     
     print('start training...')
+    
+    writer = tf.summary.FileWriter('./logs',sess.graph) # tensorboard writer
+    merged = tf.summary.merge_all()
+    
     i=0
     for epoch in range(training_epochs):
         if epoch%4==0:
@@ -204,6 +208,10 @@ if __name__ == '__main__':
         
         
         if epoch % 4 == 0:
+            # add tensorboard inf
+            #summary = sess.run(merged,{input:[1.,1.],train_output:0})
+            #writer.add_summary(summary, i)
+            # end
             
             print('\nepoch '+repr(i)+', cost = '+repr(sess.run(cost,{input:[1.,1.],train_output:0}))+', '+repr(sess.run(cost,{input:[2.72,1.],train_output:1}))+', '+repr(sess.run(cost,{input:[1.,2.72],train_output:1}))+', '+repr(sess.run(cost,{input:[2.72,2.72],train_output:0})))
             commit1()
