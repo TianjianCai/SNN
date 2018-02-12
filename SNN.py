@@ -4,8 +4,6 @@ import math
 import numpy as np
 import time
 from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.python.keras._impl.keras.backend import switch
-from tensorflow.python.ops.variables import variables_initializer
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
 
@@ -16,7 +14,7 @@ class Layer(object):
         self.n_out = n_out
         
         if W is None:
-            W = tf.Variable(tf.random_normal([n_in,n_out], 1/n_in+0.1, 0.05, tf.float32))
+            W = tf.Variable(tf.random_normal([n_in,n_out], 1/(0.3*n_in), 0.1/n_in, tf.float32))
         self.tmp_W = tf.Variable(tf.zeros_like(W))
         i = tf.Variable(0)
         sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
@@ -131,19 +129,25 @@ def w_sum_cost(W):
 def loss_func(output,true_index):
     z1 = tf.exp(tf.subtract(0., output[true_index]))
     z2 = tf.reduce_sum(tf.exp(tf.subtract(0., output)), 0, False)
-    loss = tf.subtract(0.,tf.log(tf.divide(z1,z2+1e-9)))
+    loss = tf.subtract(0.,tf.log(tf.divide(z1,z2+1e-10)))
     return loss
 
 def L2_func(W):
     w_sqr = tf.square(W)
     W2 = tf.reduce_sum(w_sqr)
     return W2
+
+def cal_out(output):
+    _, i = tf.nn.top_k(output, tf.size(output))
+    real_out = tf.reverse(i,[0])
+    return real_out[0]
+    
         
 if __name__ == '__main__':
     
-    K = 10.
-    K2 = 0.00
-    training_epochs = 1000
+    K = 100.
+    K2 = 0.001
+    training_epochs = 10000
     learning_rate = 0.05
     
     np.set_printoptions(threshold=np.inf)  
@@ -156,22 +160,34 @@ if __name__ == '__main__':
     input = tf.placeholder(tf.float32)
     train_output = tf.placeholder(tf.int32)
     
-    xs = [math.exp(0),math.exp(0)]
-    ys = 0
+    #xs = [math.exp(0),math.exp(0)]
+    #ys = 0
     
-    t_input = xs
-    t_output = ys
+    [xs],[ys] = mnist.train.next_batch(1)
     
-    l1 = Layer(input,2,4,sess)
-    l2 = Layer(l1.output,4,2,sess)
+    j=0
+    while j < ys.shape[0]:
+        if ys[j] == 1:
+            new_ys = j
+            break
+        j = j+1
     
-    cost = tf.reduce_sum([[loss_func(l2.output,train_output)],[tf.multiply(K, w_sum_cost(l1.W))],[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K, w_sum_cost(l2.W))],[tf.multiply(K2, L2_func(l2.W))]])
+    t_input = np.exp(xs)
+    t_output = new_ys
+    
+    l1 = Layer(input,784,400,sess)
+    l2 = Layer(l1.output,400,400,sess)
+    l3 = Layer(l2.output,400,10,sess)
+    
+    cost = tf.reduce_sum([[loss_func(l3.output,train_output)],[tf.multiply(K, w_sum_cost(l1.W))],[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K, w_sum_cost(l2.W))],[tf.multiply(K2, L2_func(l2.W))],[tf.multiply(K, w_sum_cost(l3.W))],[tf.multiply(K2, L2_func(l3.W))]])
 
-    g_W1,g_W2 = tf.gradients(cost,[l1.W,l2.W])
+    g_W1,g_W2,g_W3 = tf.gradients(cost,[l1.W,l2.W,l3.W])
     n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values),0.0,0.01),g_W1.values)
     n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values),0.0,0.01),g_W2.values)
+    n_g_W3 = tf.where(tf.is_nan(g_W3.values),tf.random_normal(tf.shape(g_W3.values),0.0,0.01),g_W3.values)
     update1 = tf.scatter_add(l1.tmp_W,g_W1.indices,n_g_W1)
     update2 = tf.scatter_add(l2.tmp_W,g_W2.indices,n_g_W2)
+    update3 = tf.scatter_add(l3.tmp_W,g_W3.indices,n_g_W3)
     def commit1():
         s1 = sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-20)))
         s2 = sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate))))
@@ -182,42 +198,64 @@ if __name__ == '__main__':
         s2 = sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate))))
         s3 = sess.run(tf.assign(l2.tmp_W,tf.zeros_like(l2.W)))
         return s2
+    def commit3():
+        s1 = sess.run(tf.assign(l3.tmp_W,tf.divide(l3.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l3.tmp_W)))+1e-20)))
+        s2 = sess.run(tf.assign(l3.W, tf.subtract(l3.W,tf.multiply(l3.tmp_W,learning_rate))))
+        s3 = sess.run(tf.assign(l3.tmp_W,tf.zeros_like(l3.W)))
+        return s2
+    
+    forward_out = cal_out(l3.output)
+    
+    tf.Graph.finalize(sess)
     
     print('start training...')
-    
-    writer = tf.summary.FileWriter('./logs',sess.graph) # tensorboard writer
-    merged = tf.summary.merge_all()
+    start_time = time.time()
     
     i=0
     for epoch in range(training_epochs):
-        if epoch%4==0:
-            t_input = [math.exp(0)+random.uniform(-0.1,0.1),math.exp(0)+random.uniform(-0.1,0.1)]
-            t_output = 0
-        if epoch%4==1:
-            t_input = [math.exp(1)+random.uniform(-0.1,0.1),math.exp(0)+random.uniform(-0.1,0.1)]
-            t_output = 1
-        if epoch%4==2:
-            t_input = [math.exp(0)+random.uniform(-0.1,0.1),math.exp(1)+random.uniform(-0.1,0.1)]
-            t_output = 1
-        if epoch%4==3:
-            t_input = [math.exp(1)+random.uniform(-0.1,0.1),math.exp(1)+random.uniform(-0.1,0.1)]
-            t_output = 0
+        
+        [xs],[ys] = mnist.train.next_batch(1)
+        j=0
+        while j < ys.shape[0]:
+            if ys[j] == 1:
+                new_ys = j
+                break
+            j = j+1
+        t_input = np.exp(xs)
+        t_output = new_ys
         
         sess.run(update1,{input:t_input,train_output:t_output})
         sess.run(update2,{input:t_input,train_output:t_output})
+        sess.run(update3,{input:t_input,train_output:t_output})
         
         
-        if epoch % 4 == 0:
-            # add tensorboard inf
-            #summary = sess.run(merged,{input:[1.,1.],train_output:0})
-            #writer.add_summary(summary, i)
-            # end
-            
-            print('\nepoch '+repr(i)+', cost = '+repr(sess.run(cost,{input:[1.,1.],train_output:0}))+', '+repr(sess.run(cost,{input:[2.72,1.],train_output:1}))+', '+repr(sess.run(cost,{input:[1.,2.72],train_output:1}))+', '+repr(sess.run(cost,{input:[2.72,2.72],train_output:0})))
+        if epoch % 10 == 0:
             commit1()
             commit2()
+            commit3()
+            
+            accurate = 0
+            for k in range(50):
+                [xs],[ys] = mnist.train.next_batch(1)
+                j=0
+                while j < ys.shape[0]:
+                    if ys[j] == 1:
+                        new_ys = j
+                        break
+                    j = j+1
+                test_input = np.exp(xs)
+                test_output = new_ys
+                real_output = sess.run(forward_out,{input:test_input,train_output:test_output})
+                if real_output == test_output:
+                    accurate = accurate+1
+            accurate = accurate/50.
+            duration_time = time.time() - start_time
+            print('epoch '+repr(i)+', cost = '+repr(sess.run(cost,{input:t_input,train_output:t_output})),', accurate = ' + repr(accurate)+', time = '+repr(duration_time)+'s')
+            
+            start_time = time.time()
             i=i+1
             
     
     print(sess.run(l1.W))
     print(sess.run(l2.W))
+    print(sess.run(l3.W))
