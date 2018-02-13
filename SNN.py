@@ -255,7 +255,7 @@ if __name__ == '__main__':
                 print('accurate = ' + repr(accurate))
             
             duration_time = time.time() - start_time
-            print('epoch '+repr(i)+', cost = '+repr(sess.run(cost,{input:t_input,train_output:t_output}))+', time = '+repr(duration_time))
+            print('iteration '+repr(i*10)+', cost = '+repr(sess.run(cost,{input:t_input,train_output:t_output}))+', time = '+repr(duration_time))
             
             start_time = time.time()
             i=i+1
