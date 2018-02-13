@@ -14,7 +14,7 @@ class Layer(object):
         self.n_out = n_out
         
         if W is None:
-            W = tf.Variable(tf.random_normal([n_in,n_out], 1/(0.3*n_in), 0.1/n_in, tf.float32))
+            W = tf.Variable(tf.random_normal([n_in,n_out], 1/(0.1*n_in), 0.1/n_in, tf.float32))
         self.tmp_W = tf.Variable(tf.zeros_like(W))
         i = tf.Variable(0)
         sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     K = 100.
     K2 = 0.001
     training_epochs = 10000
-    learning_rate = 0.05
+    learning_rate = 0.01
     
     np.set_printoptions(threshold=np.inf)  
     
@@ -230,27 +230,32 @@ if __name__ == '__main__':
         
         
         if epoch % 10 == 0:
+            #print(sess.run(l3.tmp_W))
             commit1()
             commit2()
             commit3()
             
             accurate = 0
-            for k in range(50):
-                [xs],[ys] = mnist.train.next_batch(1)
-                j=0
-                while j < ys.shape[0]:
-                    if ys[j] == 1:
-                        new_ys = j
-                        break
-                    j = j+1
-                test_input = np.exp(xs)
-                test_output = new_ys
-                real_output = sess.run(forward_out,{input:test_input,train_output:test_output})
-                if real_output == test_output:
-                    accurate = accurate+1
-            accurate = accurate/50.
+            if epoch % 200 == 0:
+                for k in range(50):
+                    [xs],[ys] = mnist.train.next_batch(1)
+                    j=0
+                    while j < ys.shape[0]:
+                        if ys[j] == 1:
+                            new_ys = j
+                            break
+                        j = j+1
+                    test_input = np.exp(xs)
+                    test_output = new_ys
+                    real_output = sess.run(forward_out,{input:test_input,train_output:test_output})
+                    if real_output == test_output:
+                        accurate = accurate+1
+                accurate = accurate/50.
+                
+                print('accurate = ' + repr(accurate))
+            
             duration_time = time.time() - start_time
-            print('epoch '+repr(i)+', cost = '+repr(sess.run(cost,{input:t_input,train_output:t_output})),', accurate = ' + repr(accurate)+', time = '+repr(duration_time)+'s')
+            print('epoch '+repr(i)+', cost = '+repr(sess.run(cost,{input:t_input,train_output:t_output}))+', time = '+repr(duration_time))
             
             start_time = time.time()
             i=i+1
