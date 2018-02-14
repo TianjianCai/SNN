@@ -164,6 +164,12 @@ if __name__ == '__main__':
     #ys = 0
     
     [xs],[ys] = mnist.train.next_batch(1)
+    new_xs = []
+    for x in xs:
+        if x > 0.5:
+            new_xs.append(6.0)
+        if x <= 0.5:
+            new_xs.append(1.0)
     
     j=0
     while j < ys.shape[0]:
@@ -172,7 +178,7 @@ if __name__ == '__main__':
             break
         j = j+1
     
-    t_input = np.exp(xs)
+    t_input = new_xs
     t_output = new_ys
     
     l1 = Layer(input,784,400,sess)
@@ -215,13 +221,20 @@ if __name__ == '__main__':
     for epoch in range(training_epochs):
         
         [xs],[ys] = mnist.train.next_batch(1)
+        new_xs = []
+        for x in xs:
+            if x > 0.5:
+                new_xs.append(6.0)
+            if x <= 0.5:
+                new_xs.append(1.0)
+        
         j=0
         while j < ys.shape[0]:
             if ys[j] == 1:
                 new_ys = j
                 break
             j = j+1
-        t_input = np.exp(xs)
+        t_input = new_xs
         t_output = new_ys
         
         sess.run(update1,{input:t_input,train_output:t_output})
@@ -239,13 +252,20 @@ if __name__ == '__main__':
             if epoch % 200 == 0:
                 for k in range(50):
                     [xs],[ys] = mnist.train.next_batch(1)
+                    new_xs = []
+                    for x in xs:
+                        if x > 0.5:
+                            new_xs.append(6.0)
+                        if x <= 0.5:
+                            new_xs.append(1.0)
+                    
                     j=0
                     while j < ys.shape[0]:
                         if ys[j] == 1:
                             new_ys = j
                             break
                         j = j+1
-                    test_input = np.exp(xs)
+                    test_input = new_xs
                     test_output = new_ys
                     real_output = sess.run(forward_out,{input:test_input,train_output:test_output})
                     if real_output == test_output:
