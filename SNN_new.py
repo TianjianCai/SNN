@@ -9,7 +9,7 @@ MAX_SPIKE_TIME = 1e2
 class SNNLayer(object):
     def __init__(self, layer_in, in_size, out_size):
         self.weight = tf.Variable(tf.random_normal(
-            [in_size, out_size], 2, 1, tf.float32))
+            [in_size, out_size], 1, 0.25, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
@@ -135,19 +135,14 @@ learning_rate = 1e-1
 real_input = tf.placeholder(tf.float32)
 real_output = tf.placeholder(tf.float32)
 
-layer1 = SNNLayer(real_input,784,400)
-layer2 = SNNLayer(layer1.out,400,400)
-layer3 = SNNLayer(layer2.out,400,10)
+layer1 = SNNLayer(real_input,784,800)
+layer2 = SNNLayer(layer1.out,800,10)
 
-layer_real_output = tf.concat([layer3.out,real_output],1)
+layer_real_output = tf.concat([layer2.out,real_output],1)
 output_loss = tf.reduce_mean(tf.map_fn(loss_func,layer_real_output))
-WC1 = w_sum_cost(layer1.weight)
-WC2 = w_sum_cost(layer2.weight)
-WC3 = w_sum_cost(layer3.weight)
-L2_1 = l2_func(layer1.weight)
-L2_2 = l2_func(layer2.weight)
-L2_3 = l2_func(layer3.weight)
-cost = K*(WC1+WC2+WC3)+K2*(L2_1+L2_2+L2_3)+output_loss
+WC = w_sum_cost(layer1.weight)+w_sum_cost(layer2.weight)
+L2 = l2_func(layer1.weight)+l2_func(layer2.weight)
+cost = K*WC+K2*L2+output_loss
 opt = tf.train.AdagradOptimizer(learning_rate=learning_rate)
 train_op = opt.minimize(cost)
 
