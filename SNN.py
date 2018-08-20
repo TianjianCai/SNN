@@ -17,6 +17,7 @@ class Layer(object):
             W = tf.Variable(tf.random_normal([n_in,n_out], 1/(0.1*n_in), 0.1/n_in, tf.float32))
         self.tmp_W = tf.Variable(tf.zeros_like(W))
         i = tf.Variable(0)
+
         sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
         sum_W = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
         c_zero = tf.constant(0.,tf.float32)
@@ -151,11 +152,14 @@ if __name__ == '__main__':
     learning_rate = 0.01
     
     np.set_printoptions(threshold=np.inf)  
-    
+
     config = tf.ConfigProto(
         device_count = {'GPU': 1}
     )
+
     sess = tf.Session(config=config)
+    #sess = tf.Session()
+
     
     input = tf.placeholder(tf.float32)
     train_output = tf.placeholder(tf.int32)
