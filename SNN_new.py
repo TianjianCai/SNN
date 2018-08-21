@@ -3,13 +3,13 @@ import os
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
-MAX_SPIKE_TIME = 1e2
+MAX_SPIKE_TIME = 1e5
 
 
 class SNNLayer(object):
     def __init__(self, layer_in, in_size, out_size):
-        self.weight = tf.Variable(tf.random_normal(
-            [in_size, out_size], 1, 0.25, tf.float32))
+        self.weight = tf.Variable(tf.random_uniform(
+            [in_size, out_size], 1. / in_size, 1.5 / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
@@ -62,8 +62,8 @@ class SNNLayer(object):
         weight_sumed = tf.map_fn(loop_func, weight_sorted)
         weight_input_sumed = tf.map_fn(loop_func, weight_input_mul)
         output_spike_all = tf.divide(
-            weight_input_sumed, tf.subtract(
-                weight_sumed, 1.))
+            weight_input_sumed, tf.clip_by_value(tf.subtract(
+                weight_sumed, 1.), 1e-5, 1e5))
         valid_cond_1 = tf.where(
             weight_sumed > 1,
             tf.ones_like(weight_sumed),
@@ -116,35 +116,46 @@ def l2_func(W):
 
 
 def loss_func(both):
-    output = tf.slice(both, [0], [tf.cast(tf.shape(both)[0] / 2,tf.int32)])
-    index = tf.slice(both, [tf.cast(tf.shape(both)[0] / 2,tf.int32)], [tf.cast(tf.shape(both)[0] / 2,tf.int32)])
+    output = tf.slice(both, [0], [tf.cast(tf.shape(both)[0] / 2, tf.int32)])
+    index = tf.slice(both, [tf.cast(tf.shape(both)[0] / 2, tf.int32)],
+                     [tf.cast(tf.shape(both)[0] / 2, tf.int32)])
     z1 = tf.exp(tf.subtract(0., tf.reduce_sum(tf.multiply(output, index))))
     z2 = tf.reduce_sum(tf.exp(tf.subtract(0., output)))
     loss = tf.subtract(
         0., tf.log(
-            tf.divide(
+            tf.clip_by_value(tf.divide(
                 z1, tf.clip_by_value(
-                    z2, 1e-5, 1e5))))
+                    z2, 1e-5, 1e5)),1e-5,1e5)))
     return loss
 
 
 K = 100
 K2 = 0.001
-learning_rate = 1e-1
+learning_rate = 1e-4
 
 real_input = tf.placeholder(tf.float32)
+real_input_exp = tf.where(real_input>0.5,6.*tf.ones_like(real_input),1.*tf.ones_like(real_input))
 real_output = tf.placeholder(tf.float32)
 
-layer1 = SNNLayer(real_input,784,800)
-layer2 = SNNLayer(layer1.out,800,10)
+layer1 = SNNLayer(real_input_exp, 784, 800)
+layer2 = SNNLayer(layer1.out, 800, 10)
 
-layer_real_output = tf.concat([layer2.out,real_output],1)
-output_loss = tf.reduce_mean(tf.map_fn(loss_func,layer_real_output))
-WC = w_sum_cost(layer1.weight)+w_sum_cost(layer2.weight)
-L2 = l2_func(layer1.weight)+l2_func(layer2.weight)
-cost = K*WC+K2*L2+output_loss
-opt = tf.train.AdagradOptimizer(learning_rate=learning_rate)
+layer_real_output = tf.concat([layer2.out, real_output], 1)
+output_loss = tf.reduce_mean(tf.map_fn(loss_func, layer_real_output))
+WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight)
+L2 = l2_func(layer1.weight) + l2_func(layer2.weight)
+cost = K * WC + K2 * L2 + output_loss
+opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
 train_op = opt.minimize(cost)
+
+layer_output_pos = tf.argmin(layer2.out, 1)
+real_output_pos = tf.argmax(real_output, 1)
+accurate = tf.reduce_mean(
+    tf.where(
+        tf.equal(
+            layer_output_pos, real_output_pos), tf.ones_like(
+                layer_output_pos, dtype=tf.float32), tf.zeros_like(
+                    layer_output_pos, dtype=tf.float32)))
 
 config = tf.ConfigProto(
     device_count={'GPU': 1}
@@ -159,12 +170,16 @@ try:
 except BaseException:
     print('cannot load checkpoint')
 
-i=0
+xs, ys = mnist.train.next_batch(10)
+i = 0
 while(1):
-    xs, ys = mnist.train.next_batch(10)
-    print(sess.run(cost,{real_input:xs,real_output:ys}))
-    sess.run(train_op,{real_input:xs,real_output:ys})
-    if i%10 == 0:
+    #xs, ys = mnist.train.next_batch(10)
+    print(sess.run(cost, {real_input: xs, real_output: ys}))
+    sess.run(train_op, {real_input: xs, real_output: ys})
+    if i % 10 == 0:
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
         print("checkpoint saved")
-    i = i+1
+        #xs, ys = mnist.train.next_batch(40)
+        print("accurate: " +
+              repr(sess.run(accurate, {real_input: xs, real_output: ys})))
+    i = i + 1
