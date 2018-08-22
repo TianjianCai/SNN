@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
@@ -10,7 +11,7 @@ MAX_SPIKE_TIME = 1e5
 class SNNLayer(object):
     def __init__(self, layer_in, in_size, out_size):
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 1. / in_size, 1.5 / in_size, tf.float32))
+            [in_size, out_size], 0. / in_size, 4. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
@@ -64,7 +65,7 @@ class SNNLayer(object):
         weight_input_sumed = tf.map_fn(loop_func, weight_input_mul)
         output_spike_all = tf.divide(
             weight_input_sumed, tf.clip_by_value(tf.subtract(
-                weight_sumed, 1.), 1e-5, 1e5))
+                weight_sumed, 1.), 1e-10, 1e10))
         valid_cond_1 = tf.where(
             weight_sumed > 1,
             tf.ones_like(weight_sumed),
@@ -126,16 +127,19 @@ def loss_func(both):
         0., tf.log(
             tf.clip_by_value(tf.divide(
                 z1, tf.clip_by_value(
-                    z2, 1e-5, 1e5)),1e-5,1e5)))
+                    z2, 1e-10, 1e10)),1e-10,1)))
     return loss
 
 
 K = 100
 K2 = 0.001
-learning_rate = 1e-3
+learning_rate = 1e-1
+
+lr = tf.placeholder(tf.float32)
 
 real_input = tf.placeholder(tf.float32)
-real_input_exp = tf.where(real_input>0.5,6.*tf.ones_like(real_input),1.*tf.ones_like(real_input))
+#real_input_exp = tf.where(real_input>0.5,6.*tf.ones_like(real_input),1.*tf.ones_like(real_input))
+real_input_exp = tf.exp(real_input)
 real_output = tf.placeholder(tf.float32)
 
 layer1 = SNNLayer(real_input_exp, 784, 800)
@@ -148,8 +152,18 @@ L2 = l2_func(layer1.weight) + l2_func(layer2.weight)
 cost = K * WC + K2 * L2 + output_loss
 global_step = tf.Variable(1,dtype=tf.int64)
 step_inc_op = tf.assign(global_step,global_step+1)
-opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+
+opt = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
 train_op = opt.minimize(cost)
+
+grad_l1,grad_l2 = tf.gradients(cost,[layer1.weight,layer2.weight],colocate_gradients_with_ops=True)
+grad_l1_normed = tf.divide(grad_l1.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l1.values))))
+grad_l2_normed = tf.divide(grad_l2.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l2.values))))
+train_op_1 = tf.scatter_add(layer1.weight,grad_l1.indices,-lr*grad_l1_normed)
+train_op_2 = tf.scatter_add(layer2.weight,grad_l2.indices,-lr*grad_l2_normed)
+
+resize_img_input = tf.placeholder(tf.float32)
+resize_img_op = tf.reshape(tf.image.resize_images(tf.reshape(resize_img_input,[-1,28,28,1]),[14,14]),[-1,196])
 
 layer_output_pos = tf.argmin(layer2.out, 1)
 real_output_pos = tf.argmax(real_output, 1)
@@ -172,29 +186,41 @@ try:
     print('checkpoint loaded')
 except BaseException:
     print('cannot load checkpoint')
+
 try:
     xs_full = np.load(os.getcwd()+"/save/train_data_x.npy")
     ys_full = np.load(os.getcwd()+"/save/train_data_y.npy")
     print('train data loaded')
 except:
-    xs_full, ys_full = mnist.train.next_batch(50)
+    xs_full, ys_full = mnist.train.next_batch(100)
+    #xs_full = sess.run(resize_img_op,{resize_img_input:xs_full})
+    plt.imshow(np.reshape(xs_full[0],[28,28]),cmap="gray")
+    plt.show()
     np.save(os.getcwd()+"/save/train_data_x",xs_full)
     np.save(os.getcwd() + "/save/train_data_y", ys_full)
     print('cannot load train data, get new data')
 
+print(np.shape(xs_full))
+
 xs = np.split(xs_full,10)
 ys = np.split(ys_full,10)
 
+
+#print(sess.run(layer2.out,{real_input: xs[0], real_output: ys[0]}))
+
 i = 1
 while(1):
-    #xs, ys = mnist.train.next_batch(10)
+    #xs, ys = mnist.train.next_batch(3)
     print("step ", repr(sess.run(global_step)), ", ", repr(sess.run(cost, {real_input: xs[i%10], real_output: ys[i%10]})))
-    sess.run(train_op, {real_input: xs[i%10], real_output: ys[i%10]})
+    #print(sess.run(grad_l1_normed,{real_input: xs[i%10], real_output: ys[i%10], lr:learning_rate}))
+    sess.run([train_op_1,train_op_2], {real_input: xs[i%10], real_output: ys[i%10], lr:(learning_rate*np.exp((sess.run(global_step)*-0.007)))})
     sess.run(step_inc_op)
     if i % 10 == 0:
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
         print("checkpoint saved")
-        #xs, ys = mnist.train.next_batch(40)
+        #xs, ys = mnist.train.next_batch(10)
+        print(sess.run(layer2.out, {real_input: xs[i%10], real_output: ys[i%10], lr: learning_rate}))
+        print(ys[0])
         print("accurate: ",
               repr(sess.run(accurate, {real_input: xs_full, real_output: ys_full})))
     i = i + 1
