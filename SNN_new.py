@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import os
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
@@ -131,7 +132,7 @@ def loss_func(both):
 
 K = 100
 K2 = 0.001
-learning_rate = 1e-4
+learning_rate = 1e-3
 
 real_input = tf.placeholder(tf.float32)
 real_input_exp = tf.where(real_input>0.5,6.*tf.ones_like(real_input),1.*tf.ones_like(real_input))
@@ -145,6 +146,8 @@ output_loss = tf.reduce_mean(tf.map_fn(loss_func, layer_real_output))
 WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight)
 L2 = l2_func(layer1.weight) + l2_func(layer2.weight)
 cost = K * WC + K2 * L2 + output_loss
+global_step = tf.Variable(1,dtype=tf.int64)
+step_inc_op = tf.assign(global_step,global_step+1)
 opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
 train_op = opt.minimize(cost)
 
@@ -169,17 +172,29 @@ try:
     print('checkpoint loaded')
 except BaseException:
     print('cannot load checkpoint')
+try:
+    xs_full = np.load(os.getcwd()+"/save/train_data_x.npy")
+    ys_full = np.load(os.getcwd()+"/save/train_data_y.npy")
+    print('train data loaded')
+except:
+    xs_full, ys_full = mnist.train.next_batch(50)
+    np.save(os.getcwd()+"/save/train_data_x",xs_full)
+    np.save(os.getcwd() + "/save/train_data_y", ys_full)
+    print('cannot load train data, get new data')
 
-xs, ys = mnist.train.next_batch(10)
-i = 0
+xs = np.split(xs_full,10)
+ys = np.split(ys_full,10)
+
+i = 1
 while(1):
     #xs, ys = mnist.train.next_batch(10)
-    print(sess.run(cost, {real_input: xs, real_output: ys}))
-    sess.run(train_op, {real_input: xs, real_output: ys})
+    print("step ", repr(sess.run(global_step)), ", ", repr(sess.run(cost, {real_input: xs[i%10], real_output: ys[i%10]})))
+    sess.run(train_op, {real_input: xs[i%10], real_output: ys[i%10]})
+    sess.run(step_inc_op)
     if i % 10 == 0:
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
         print("checkpoint saved")
         #xs, ys = mnist.train.next_batch(40)
-        print("accurate: " +
-              repr(sess.run(accurate, {real_input: xs, real_output: ys})))
+        print("accurate: ",
+              repr(sess.run(accurate, {real_input: xs_full, real_output: ys_full})))
     i = i + 1
