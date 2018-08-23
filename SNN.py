@@ -1,290 +1,226 @@
 import tensorflow as tf
-import random
-import math
 import numpy as np
-import time
+import matplotlib.pyplot as plt
+import os
 from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
+MAX_SPIKE_TIME = 1e5
 
-class Layer(object):
-    def __init__(self,input,n_in,n_out,sess, W=None):
-        self.input = input
-        self.n_in = n_in
-        self.n_out = n_out
-        
-        if W is None:
-            W = tf.Variable(tf.random_normal([n_in,n_out], 1/(0.1*n_in), 0.1/n_in, tf.float32))
-        self.tmp_W = tf.Variable(tf.zeros_like(W))
-        i = tf.Variable(0)
 
-        sum_z = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
-        sum_W = tf.Variable(tf.zeros([n_out,n_in],tf.float32))
-        c_zero = tf.constant(0.,tf.float32)
-        c_one = tf.constant(1.,tf.float32)
-        
-        init = tf.global_variables_initializer()
-        
-        sess.run(init)
-        
-        self.W = W
-        self.i = i
-        self.sum_z = sum_z
-        self.sum_W = sum_W
-        self.c_zero = c_zero
-        self.c_one = c_one
-        def cal_out():
-            r, ind = tf.nn.top_k(self.input, self.n_in)
-            r_ind = tf.reverse(ind,[0])
-            nx = tf.gather(self.input,r_ind)
-            nW = tf.transpose(tf.gather(self.W,r_ind))
-            nxW = tf.multiply(nx, nW)
-            
-            def body_z(i,z):
-                z = tf.slice(
-                    tf.concat(
-                        [
-                            tf.cast(
-                                tf.reduce_sum(
-                                    tf.slice(nxW,[0,0],[self.n_out,i+1]),
-                                    1,True),
-                                tf.float32),
-                            z],
-                        1),
-                    [0,0],[self.n_out,self.n_in])
-                return [i+1,z]
-            
-            def body_W(i,z):
-                z = tf.slice(
-                    tf.concat(
-                        [
-                            tf.cast(
-                                tf.reduce_sum(
-                                    tf.slice(nW,[0,0],[self.n_out,i+1]),
-                                    1,True),
-                                tf.float32),
-                            z],
-                        1),
-                    [0,0],[self.n_out,self.n_in])
-                return [i+1,z]
+class SNNLayer(object):
+    def __init__(self, layer_in, in_size, out_size):
+        self.weight = tf.Variable(tf.random_uniform(
+            [in_size, out_size], 0. / in_size, 4. / in_size, tf.float32))
+        batch_num = tf.shape(layer_in)[0]
+        _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
+        map_x = tf.reshape(
+            tf.tile(
+                tf.reshape(
+                    tf.range(
+                        start=0, limit=batch_num, delta=1), [
+                        batch_num, 1]), [
+                    1, in_size]), [
+                batch_num, in_size, 1])
+        input_sorted_map = tf.concat(
+            [map_x, tf.reshape(input_sorted_indices, [batch_num, in_size, 1])], 2)
+        input_sorted = tf.gather_nd(params=layer_in, indices=input_sorted_map)
+        input_sorted_outsize = tf.tile(
+            tf.reshape(
+                input_sorted, [
+                    batch_num, in_size, 1]), [
+                1, 1, out_size])
+        weight_sorted = tf.map_fn(
+            lambda x: tf.gather(
+                self.weight, tf.cast(
+                    x, tf.int32)), tf.cast(
+                input_sorted_indices, tf.float32))
+        weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)
 
-            def condition(i,z):
-                return i<self.n_in
-            
-            r1,n_sum_z=tf.while_loop(condition, body_z, [self.i,self.sum_z])
-            r2,n_sum_W=tf.while_loop(condition, body_W, [self.i,self.sum_W])
-            f_sum_z = tf.reverse(n_sum_z,[1])
-            f_sum_W = tf.reverse(n_sum_W,[1])
-            
-            out_all = tf.divide(f_sum_z, tf.subtract(f_sum_W,1))
-            out_all_2 = tf.concat(
-                [
-                    out_all,
-                    tf.transpose(
-                        [
-                            tf.tile(
-                                [tf.divide(self.c_one,self.c_zero)],
-                                [self.n_out])
-                            ]
-                        )
-                    ]
-                ,1)
-            
-            out_ok = tf.where(
-                tf.logical_and(
-                    tf.less(
-                        tf.cast(
-                            tf.tile(
-                                [tf.concat([nx,[1]],0)],
-                                [self.n_out,1]),
-                            tf.float32)
-                        ,
-                        out_all_2),
-                    tf.greater_equal(
-                        tf.cast(
-                            tf.tile(
-                                [tf.slice(
-                                    tf.concat(
-                                        [nx,[tf.divide(self.c_one,self.c_zero),tf.divide(self.c_one,self.c_zero)]],0),
-                                    [1],
-                                    [self.n_in+1])
-                                    ],
-                                [self.n_out,1]),
-                            tf.float32),
-                        out_all_2)))
+        def add_func(index, next_array, source):
+            next_array = tf.slice(
+                tf.concat(
+                    [
+                        tf.reduce_sum(
+                            tf.slice(source, [0, 0], [index + 1, out_size]), 0, True
+                        ), next_array
+                    ], 0
+                ), [0, 0], [in_size, out_size]
+            )
+            return [index + 1, next_array, source]
 
-            out_idx = tf.transpose(tf.concat([[tf.range(0,self.n_out)],[tf.cast(tf.segment_min(out_ok[:, 1], out_ok[:, 0]),tf.int32)]],0))
-            out = tf.gather_nd(out_all_2,out_idx)
-            output = tf.where(out>1e5,tf.multiply(tf.ones_like(out),1e5),out)
-            return output
-        self.output = cal_out()
+        def loop_cond(index, next_array, source):
+            return index < in_size
+
+        def loop_init(source):
+            index = tf.constant(0)
+            next_array = tf.zeros([in_size, out_size], tf.float32)
+            return [index, next_array, source]
+
+        def loop_func(loop_matrix):
+            _, result, _ = tf.while_loop(
+                loop_cond, add_func, loop_init(loop_matrix))
+            return tf.reverse(result, [0])
+        weight_sumed = tf.map_fn(loop_func, weight_sorted)
+        weight_input_sumed = tf.map_fn(loop_func, weight_input_mul)
+        output_spike_all = tf.divide(
+            weight_input_sumed, tf.clip_by_value(tf.subtract(
+                weight_sumed, 1.), 1e-10, 1e10))
+        valid_cond_1 = tf.where(
+            weight_sumed > 1,
+            tf.ones_like(weight_sumed),
+            tf.zeros_like(weight_sumed))
+        input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
+            [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+        valid_cond_2 = tf.where(
+            output_spike_all < input_sorted_outsize_left,
+            tf.ones_like(input_sorted_outsize),
+            tf.zeros_like(input_sorted_outsize))
+        valid_cond_both = tf.where(
+            tf.equal(
+                valid_cond_1 +
+                valid_cond_2,
+                2),
+            tf.ones_like(valid_cond_1),
+            tf.zeros_like(valid_cond_1))
+        valid_cond_both_extend = tf.concat(
+            [valid_cond_both, tf.ones([batch_num, 1, out_size])], 1)
+        output_spike_all_extent = tf.concat(
+            [output_spike_all, MAX_SPIKE_TIME * tf.ones([batch_num, 1, out_size])], 1)
+        output_valid_both = tf.concat(
+            [output_spike_all_extent, valid_cond_both_extend], 1)
+
+        def select_output(both):
+            value = tf.transpose(
+                tf.slice(
+                    both, [
+                        0, 0], [
+                        in_size + 1, out_size]))
+            valid = tf.transpose(
+                tf.slice(both, [in_size + 1, 0], [in_size + 1, out_size]))
+            pos = tf.cast(tf.where(tf.equal(valid, 1)), tf.int32)
+            pos_reduced = tf.concat([tf.reshape(tf.range(0, out_size), [out_size, 1]), tf.reshape(
+                tf.segment_min(pos[:, 1], pos[:, 0]), [out_size, 1])], 1)
+            return tf.gather_nd(value, pos_reduced)
+        layer_out = tf.map_fn(select_output, output_valid_both)
+        self.out = layer_out
+
 
 def w_sum_cost(W):
-    zero_row = tf.zeros([tf.shape(W)[1]],tf.float32)
-    sum_weight = tf.reduce_sum(W, 0)
-    sum_weight_sub = tf.subtract(1., sum_weight)
-    sum_weight_all = tf.reduce_max(tf.concat([[zero_row],[sum_weight_sub]], 0), 0,True)
-    cost = tf.reduce_sum(sum_weight_all)
-    return cost
+    part1 = tf.subtract(1., tf.reduce_sum(W, 0))
+    part2 = tf.where(part1 > 0, part1, tf.zeros_like(part1))
+    return tf.reduce_sum(part2)
 
-def loss_func(output,true_index):
-    z1 = tf.exp(tf.subtract(0., output[true_index]))
-    z2 = tf.reduce_sum(tf.exp(tf.subtract(0., output)), 0, False)
-    loss = tf.subtract(0.,tf.log(tf.divide(z1,z2+1e-10)))
+
+def l2_func(W):
+    w_sqr = tf.square(W)
+    return tf.reduce_sum(w_sqr)
+
+
+def loss_func(both):
+    output = tf.slice(both, [0], [tf.cast(tf.shape(both)[0] / 2, tf.int32)])
+    index = tf.slice(both, [tf.cast(tf.shape(both)[0] / 2, tf.int32)],
+                     [tf.cast(tf.shape(both)[0] / 2, tf.int32)])
+    z1 = tf.exp(tf.subtract(0., tf.reduce_sum(tf.multiply(output, index))))
+    z2 = tf.reduce_sum(tf.exp(tf.subtract(0., output)))
+    loss = tf.subtract(
+        0., tf.log(
+            tf.clip_by_value(tf.divide(
+                z1, tf.clip_by_value(
+                    z2, 1e-10, 1e10)),1e-10,1)))
     return loss
 
-def L2_func(W):
-    w_sqr = tf.square(W)
-    W2 = tf.reduce_sum(w_sqr)
-    return W2
 
-def cal_out(output):
-    _, i = tf.nn.top_k(output, tf.size(output))
-    real_out = tf.reverse(i,[0])
-    return real_out[0]
-    
-        
-if __name__ == '__main__':
-    
-    K = 100.
-    K2 = 0.001
-    training_epochs = 10000
-    learning_rate = 0.01
-    
-    np.set_printoptions(threshold=np.inf)  
+K = 100
+K2 = 0.001
+learning_rate = 1e-1
 
-    config = tf.ConfigProto(
-        device_count = {'GPU': 1}
-    )
+lr = tf.placeholder(tf.float32)
 
-    sess = tf.Session(config=config)
-    #sess = tf.Session()
+real_input = tf.placeholder(tf.float32)
+#real_input_exp = tf.where(real_input>0.5,6.*tf.ones_like(real_input),1.*tf.ones_like(real_input))
+real_input_exp = tf.exp(real_input)
+real_output = tf.placeholder(tf.float32)
 
-    
-    input = tf.placeholder(tf.float32)
-    train_output = tf.placeholder(tf.int32)
-    
-    #xs = [math.exp(0),math.exp(0)]
-    #ys = 0
-    
-    [xs],[ys] = mnist.train.next_batch(1)
-    new_xs = []
-    for x in xs:
-        if x > 0.5:
-            new_xs.append(6.0)
-        if x <= 0.5:
-            new_xs.append(1.0)
-    
-    j=0
-    while j < ys.shape[0]:
-        if ys[j] == 1:
-            new_ys = j
-            break
-        j = j+1
-    
-    t_input = new_xs
-    t_output = new_ys
-    
-    l1 = Layer(input,784,400,sess)
-    l2 = Layer(l1.output,400,400,sess)
-    l3 = Layer(l2.output,400,10,sess)
-    
-    cost = tf.reduce_sum([[loss_func(l3.output,train_output)],[tf.multiply(K, w_sum_cost(l1.W))],[tf.multiply(K2, L2_func(l1.W))],[tf.multiply(K, w_sum_cost(l2.W))],[tf.multiply(K2, L2_func(l2.W))],[tf.multiply(K, w_sum_cost(l3.W))],[tf.multiply(K2, L2_func(l3.W))]])
+layer1 = SNNLayer(real_input_exp, 784, 800)
+layer2 = SNNLayer(layer1.out, 800, 10)
 
-    g_W1,g_W2,g_W3 = tf.gradients(cost,[l1.W,l2.W,l3.W])
-    n_g_W1 = tf.where(tf.is_nan(g_W1.values),tf.random_normal(tf.shape(g_W1.values),0.0,0.01),g_W1.values)
-    n_g_W2 = tf.where(tf.is_nan(g_W2.values),tf.random_normal(tf.shape(g_W2.values),0.0,0.01),g_W2.values)
-    n_g_W3 = tf.where(tf.is_nan(g_W3.values),tf.random_normal(tf.shape(g_W3.values),0.0,0.01),g_W3.values)
-    update1 = tf.scatter_add(l1.tmp_W,g_W1.indices,n_g_W1)
-    update2 = tf.scatter_add(l2.tmp_W,g_W2.indices,n_g_W2)
-    update3 = tf.scatter_add(l3.tmp_W,g_W3.indices,n_g_W3)
-    def commit1():
-        s1 = sess.run(tf.assign(l1.tmp_W,tf.divide(l1.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l1.tmp_W)))+1e-20)))
-        s2 = sess.run(tf.assign(l1.W, tf.subtract(l1.W,tf.multiply(l1.tmp_W,learning_rate))))
-        s3 = sess.run(tf.assign(l1.tmp_W,tf.zeros_like(l1.W)))
-        return s2
-    def commit2():
-        s1 = sess.run(tf.assign(l2.tmp_W,tf.divide(l2.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l2.tmp_W)))+1e-20)))
-        s2 = sess.run(tf.assign(l2.W, tf.subtract(l2.W,tf.multiply(l2.tmp_W,learning_rate))))
-        s3 = sess.run(tf.assign(l2.tmp_W,tf.zeros_like(l2.W)))
-        return s2
-    def commit3():
-        s1 = sess.run(tf.assign(l3.tmp_W,tf.divide(l3.tmp_W,tf.sqrt(tf.reduce_sum(tf.square(l3.tmp_W)))+1e-20)))
-        s2 = sess.run(tf.assign(l3.W, tf.subtract(l3.W,tf.multiply(l3.tmp_W,learning_rate))))
-        s3 = sess.run(tf.assign(l3.tmp_W,tf.zeros_like(l3.W)))
-        return s2
-    
-    forward_out = cal_out(l3.output)
-    
-    tf.Graph.finalize(sess)
-    
-    print('start training...')
-    start_time = time.time()
-    
-    i=0
-    for epoch in range(training_epochs):
-        
-        [xs],[ys] = mnist.train.next_batch(1)
-        new_xs = []
-        for x in xs:
-            if x > 0.5:
-                new_xs.append(6.0)
-            if x <= 0.5:
-                new_xs.append(1.0)
-        
-        j=0
-        while j < ys.shape[0]:
-            if ys[j] == 1:
-                new_ys = j
-                break
-            j = j+1
-        t_input = new_xs
-        t_output = new_ys
-        
-        sess.run(update1,{input:t_input,train_output:t_output})
-        sess.run(update2,{input:t_input,train_output:t_output})
-        sess.run(update3,{input:t_input,train_output:t_output})
-        
-        
-        if epoch % 10 == 0:
-            #print(sess.run(l3.tmp_W))
-            commit1()
-            commit2()
-            commit3()
-            
-            accurate = 0
-            if epoch % 200 == 0:
-                for k in range(50):
-                    [xs],[ys] = mnist.train.next_batch(1)
-                    new_xs = []
-                    for x in xs:
-                        if x > 0.5:
-                            new_xs.append(6.0)
-                        if x <= 0.5:
-                            new_xs.append(1.0)
-                    
-                    j=0
-                    while j < ys.shape[0]:
-                        if ys[j] == 1:
-                            new_ys = j
-                            break
-                        j = j+1
-                    test_input = new_xs
-                    test_output = new_ys
-                    real_output = sess.run(forward_out,{input:test_input,train_output:test_output})
-                    if real_output == test_output:
-                        accurate = accurate+1
-                accurate = accurate/50.
-                
-                print('accurate = ' + repr(accurate))
-            
-            duration_time = time.time() - start_time
-            print('iteration '+repr(i*10)+', cost = '+repr(sess.run(cost,{input:t_input,train_output:t_output}))+', time = '+repr(duration_time))
-            
-            start_time = time.time()
-            i=i+1
-            
-    
-    print(sess.run(l1.W))
-    print(sess.run(l2.W))
-    print(sess.run(l3.W))
+layer_real_output = tf.concat([layer2.out, real_output], 1)
+output_loss = tf.reduce_mean(tf.map_fn(loss_func, layer_real_output))
+WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight)
+L2 = l2_func(layer1.weight) + l2_func(layer2.weight)
+cost = K * WC + K2 * L2 + output_loss
+global_step = tf.Variable(1,dtype=tf.int64)
+step_inc_op = tf.assign(global_step,global_step+1)
+
+opt = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+train_op = opt.minimize(cost)
+
+grad_l1,grad_l2 = tf.gradients(cost,[layer1.weight,layer2.weight],colocate_gradients_with_ops=True)
+grad_l1_normed = tf.divide(grad_l1.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l1.values))))
+grad_l2_normed = tf.divide(grad_l2.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l2.values))))
+train_op_1 = tf.scatter_add(layer1.weight,grad_l1.indices,-lr*grad_l1_normed)
+train_op_2 = tf.scatter_add(layer2.weight,grad_l2.indices,-lr*grad_l2_normed)
+
+resize_img_input = tf.placeholder(tf.float32)
+resize_img_op = tf.reshape(tf.image.resize_images(tf.reshape(resize_img_input,[-1,28,28,1]),[14,14]),[-1,196])
+
+layer_output_pos = tf.argmin(layer2.out, 1)
+real_output_pos = tf.argmax(real_output, 1)
+accurate = tf.reduce_mean(
+    tf.where(
+        tf.equal(
+            layer_output_pos, real_output_pos), tf.ones_like(
+                layer_output_pos, dtype=tf.float32), tf.zeros_like(
+                    layer_output_pos, dtype=tf.float32)))
+
+config = tf.ConfigProto(
+    device_count={'GPU': 1}
+)
+config.gpu_options.allow_growth = True
+sess = tf.Session(config=config)
+sess.run(tf.global_variables_initializer())
+saver = tf.train.Saver()
+try:
+    saver.restore(sess, os.getcwd() + '/save/save.ckpt')
+    print('checkpoint loaded')
+except BaseException:
+    print('cannot load checkpoint')
+
+try:
+    xs_full = np.load(os.getcwd()+"/save/train_data_x.npy")
+    ys_full = np.load(os.getcwd()+"/save/train_data_y.npy")
+    print('train data loaded')
+except:
+    xs_full, ys_full = mnist.train.next_batch(50)
+    #xs_full = sess.run(resize_img_op,{resize_img_input:xs_full})
+    plt.imshow(np.reshape(xs_full[0],[28,28]),cmap="gray")
+    plt.show()
+    np.save(os.getcwd()+"/save/train_data_x",xs_full)
+    np.save(os.getcwd() + "/save/train_data_y", ys_full)
+    print('cannot load train data, get new data')
+
+print(np.shape(xs_full))
+
+xs = np.split(xs_full,10)
+ys = np.split(ys_full,10)
+
+
+#print(sess.run(layer2.out,{real_input: xs[0], real_output: ys[0]}))
+
+i = 1
+while(1):
+    #xs, ys = mnist.train.next_batch(3)
+    print("step ", repr(sess.run(global_step)), ", ", repr(sess.run(cost, {real_input: xs[i%10], real_output: ys[i%10]})))
+    #print(sess.run(grad_l1_normed,{real_input: xs[i%10], real_output: ys[i%10], lr:learning_rate}))
+    sess.run([train_op_1,train_op_2], {real_input: xs[i%10], real_output: ys[i%10], lr:(learning_rate*np.exp((sess.run(global_step)*-0.001)))})
+    sess.run(step_inc_op)
+    if i % 10 == 0:
+        saver.save(sess, os.getcwd() + '/save/save.ckpt')
+        print("checkpoint saved")
+        #xs, ys = mnist.train.next_batch(10)
+        print(sess.run(layer2.out, {real_input: xs[i%10], real_output: ys[i%10]})[0])
+        print(ys[0][0])
+        print("accurate: ",
+              repr(sess.run(accurate, {real_input: xs_full, real_output: ys_full})))
+    i = i + 1
