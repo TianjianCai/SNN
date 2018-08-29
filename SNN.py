@@ -8,6 +8,33 @@ mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 MAX_SPIKE_TIME = 1e5
 
 
+class MnistData(object):
+    def __init__(self, size, path=["/save/train_data_x","/save/train_data_y"]):
+        try:
+            self.xs_full = np.load(os.getcwd() + path[0] + ".npy")
+            self.ys_full = np.load(os.getcwd() + path[1] + ".npy")
+            print(path[0]+", "+path[1] + " "+"loaded")
+        except:
+            self.xs_full, self.ys_full = mnist.train.next_batch(size, shuffle=False)
+            np.save(os.getcwd() + path[0], self.xs_full)
+            np.save(os.getcwd() + path[1], self.ys_full)
+            print("cannot load " + path[0]+", "+path[1] +", get new data")
+        self.datasize = size
+        self.pointer = 0
+
+    def next_batch(self,batch_size):
+        if self.pointer + batch_size < self.datasize:
+            pass
+        else:
+            self.pointer = 0
+            if batch_size >= self.datasize:
+                batch_size = self.datasize - 1
+        xs = self.xs_full[self.pointer:self.pointer + batch_size, :]
+        ys = self.ys_full[self.pointer:self.pointer + batch_size, :]
+        self.pointer = self.pointer + batch_size
+        return xs, ys
+
+
 class SNNLayer(object):
     def __init__(self, layer_in, in_size, out_size):
         self.weight = tf.Variable(tf.random_uniform(
@@ -186,7 +213,7 @@ try:
     print('checkpoint loaded')
 except BaseException:
     print('cannot load checkpoint')
-
+'''
 try:
     xs_full = np.load(os.getcwd()+"/save/train_data_x.npy")
     ys_full = np.load(os.getcwd()+"/save/train_data_y.npy")
@@ -204,23 +231,30 @@ print(np.shape(xs_full))
 
 xs = np.split(xs_full,10)
 ys = np.split(ys_full,10)
-
-
-#print(sess.run(layer2.out,{real_input: xs[0], real_output: ys[0]}))
+'''
+mnistData_train = MnistData(size=2000,path=["/save/train_data_x","/save/train_data_y"])
+mnistData_test = MnistData(size=100,path=["/save/test_data_x","/save/test_data_y"])
 
 i = 1
 while(1):
-    #xs, ys = mnist.train.next_batch(3)
-    print("step ", repr(sess.run(global_step)), ", ", repr(sess.run(cost, {real_input: xs[i%10], real_output: ys[i%10]})))
+    xs, ys = mnistData_train.next_batch(10)
+    print("step ", repr(sess.run(global_step)), ", ", repr(sess.run(cost, {real_input: xs, real_output: ys})))
     #print(sess.run(grad_l1_normed,{real_input: xs[i%10], real_output: ys[i%10], lr:learning_rate}))
-    sess.run([train_op_1,train_op_2], {real_input: xs[i%10], real_output: ys[i%10], lr:(learning_rate*np.exp((sess.run(global_step)*-0.001)))})
+    sess.run([train_op_1,train_op_2], {real_input: xs, real_output: ys, lr:(learning_rate*np.exp((sess.run(global_step)*-0.0003)))})
     sess.run(step_inc_op)
     if i % 10 == 0:
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
         print("checkpoint saved")
-        #xs, ys = mnist.train.next_batch(10)
-        print(sess.run(layer2.out, {real_input: xs[i%10], real_output: ys[i%10]})[0])
-        print(ys[0][0])
-        print("accurate: ",
-              repr(sess.run(accurate, {real_input: xs_full, real_output: ys_full})))
+        xs, ys = mnistData_test.next_batch(50)
+        print(sess.run(layer2.out, {real_input: [xs[0]], real_output: [ys[0]]}))
+        print([ys[0]])
+        j = 0
+        acc = 0
+        while(j<100/50):
+            xs, ys = mnistData_test.next_batch(50)
+            acc = acc + sess.run(accurate, {real_input: xs, real_output: ys})
+            j = j+1
+        acc = acc/(100/50)
+        print("------accurate: ",
+              repr(acc))
     i = i + 1
