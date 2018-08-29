@@ -202,7 +202,7 @@ accurate = tf.reduce_mean(
                     layer_output_pos, dtype=tf.float32)))
 
 config = tf.ConfigProto(
-    device_count={'GPU': 1}
+    #device_count={'GPU': 1}
 )
 config.gpu_options.allow_growth = True
 sess = tf.Session(config=config)
@@ -238,7 +238,10 @@ mnistData_test = MnistData(size=100,path=["/save/test_data_x","/save/test_data_y
 i = 1
 while(1):
     xs, ys = mnistData_train.next_batch(10)
-    print("step ", repr(sess.run(global_step)), ", ", repr(sess.run(cost, {real_input: xs, real_output: ys})))
+    tmpstr = repr(sess.run(global_step)) + ", " + repr(sess.run(cost, {real_input: xs, real_output: ys}))
+    print(tmpstr)
+    with open(os.getcwd()+"/cost.txt", "a") as f:
+        f.write("\n"+tmpstr)
     #print(sess.run(grad_l1_normed,{real_input: xs[i%10], real_output: ys[i%10], lr:learning_rate}))
     sess.run([train_op_1,train_op_2], {real_input: xs, real_output: ys, lr:(learning_rate*np.exp((sess.run(global_step)*-0.0003)))})
     sess.run(step_inc_op)
@@ -255,6 +258,7 @@ while(1):
             acc = acc + sess.run(accurate, {real_input: xs, real_output: ys})
             j = j+1
         acc = acc/(100/50)
-        print("------accurate: ",
-              repr(acc))
+        print("------accurate: ", repr(acc))
+        with open(os.getcwd() + "/accuracy.txt", "a") as f:
+            f.write("\n" + repr(sess.run(global_step)) + ", " + repr(acc))
     i = i + 1
