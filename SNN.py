@@ -219,6 +219,11 @@ K = 100
 K2 = 0.001
 learning_rate = 1e-1
 
+TRAINING_DATA_SIZE = 50000
+TESTING_DATA_SIZE = 1000
+TRAINING_BATCH = 100
+TESTING_BATCH = 100
+
 """
 lr is learning rate to be used when training
 real_input and real_output are the layer input and expected output
@@ -230,18 +235,19 @@ real_output = tf.placeholder(tf.float32)
 
 """
 drawing the graph of SNN
-layer2.out is the output of this 784-800-10 SNN
+
 """
 layer1 = SNNLayer(real_input_exp, 784, 800)
-layer2 = SNNLayer(layer1.out, 800, 10)
+layer2 = SNNLayer(layer1.out, 400, 400)
+layer3 = SNNLayer(layer2.out, 400, 10)
 
 """
 draw the graph to calculate cost to be optimized
 """
-layer_real_output = tf.concat([layer2.out, real_output], 1)
+layer_real_output = tf.concat([layer3.out, real_output], 1)
 output_loss = tf.reduce_mean(tf.map_fn(loss_func, layer_real_output))
-WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight)
-L2 = l2_func(layer1.weight) + l2_func(layer2.weight)
+WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight) + w_sum_cost(layer3.weight)
+L2 = l2_func(layer1.weight) + l2_func(layer2.weight) + l2_func(layer3.weight)
 cost = K * WC + K2 * L2 + output_loss
 
 """
@@ -253,16 +259,18 @@ step_inc_op = tf.assign(global_step,global_step+1)
 """
 draw the graph to calculate gradient and update wight operations 
 """
-grad_l1,grad_l2 = tf.gradients(cost,[layer1.weight,layer2.weight],colocate_gradients_with_ops=True)
+grad_l1,grad_l2,grad_l3 = tf.gradients(cost,[layer1.weight,layer2.weight,layer3.weight],colocate_gradients_with_ops=True)
 grad_l1_normed = tf.divide(grad_l1.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l1.values))))
 grad_l2_normed = tf.divide(grad_l2.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l2.values))))
+grad_l3_normed = tf.divide(grad_l3.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l3.values))))
 train_op_1 = tf.scatter_add(layer1.weight,grad_l1.indices,-lr*grad_l1_normed)
 train_op_2 = tf.scatter_add(layer2.weight,grad_l2.indices,-lr*grad_l2_normed)
+train_op_3 = tf.scatter_add(layer3.weight,grad_l3.indices,-lr*grad_l3_normed)
 
 """
 draw the graph to calculate accurate
 """
-layer_output_pos = tf.argmin(layer2.out, 1)
+layer_output_pos = tf.argmin(layer3.out, 1)
 real_output_pos = tf.argmax(real_output, 1)
 accurate = tf.reduce_mean(
     tf.where(
@@ -294,8 +302,8 @@ except BaseException:
 """
 set up mnist data to be used when training and testing(arrays, NOT tensors)
 """
-mnistData_train = MnistData(size=2000,path=["/save/train_data_x","/save/train_data_y"])
-mnistData_test = MnistData(size=100,path=["/save/test_data_x","/save/test_data_y"])
+mnistData_train = MnistData(size=TRAINING_DATA_SIZE,path=["/save/train_data_x","/save/train_data_y"])
+mnistData_test = MnistData(size=TESTING_DATA_SIZE,path=["/save/test_data_x","/save/test_data_y"])
 
 
 """
@@ -303,29 +311,29 @@ training using mnist data
 """
 i = 1
 while(1):
-    xs, ys = mnistData_train.next_batch(10)
-    tmpstr = repr(sess.run(global_step)) + ", " + repr(sess.run(cost, {real_input: xs, real_output: ys}))
-    print(tmpstr)
-    with open(os.getcwd()+"/cost.txt", "a") as f:
-        f.write("\n"+tmpstr)
-    sess.run([train_op_1,train_op_2], {real_input: xs, real_output: ys, lr:(learning_rate*np.exp((sess.run(global_step)*-0.0003)))})
+    xs, ys = mnistData_train.next_batch(TRAINING_BATCH)
+    [c, _, _, _] = sess.run([cost, train_op_1, train_op_2, train_op_3], {real_input: xs, real_output: ys, lr:(learning_rate*np.exp((sess.run(global_step)*-0.0003))+1e-3)})
     sess.run(step_inc_op)
+    tmpstr = repr(sess.run(global_step)) + ", " + repr(c)
+    print(tmpstr)
+    with open(os.getcwd() + "/cost.txt", "a") as f:
+        f.write("\n" + tmpstr)
     if i % 10 == 0:
         """
        Here starts testing 
         """
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
         print("checkpoint saved")
-        xs, ys = mnistData_test.next_batch(50)
-        print(sess.run(layer2.out, {real_input: [xs[0]], real_output: [ys[0]]}))
-        print([ys[0]])
+        xs, ys = mnistData_test.next_batch(TESTING_BATCH)
+        print(sess.run(layer3.out, {real_input: xs[0:10], real_output: ys[0:10]}))
+        print(ys[0:10])
         j = 0
         acc = 0
-        while(j<100/50):
-            xs, ys = mnistData_test.next_batch(50)
+        while(j<TESTING_DATA_SIZE/TESTING_BATCH):
+            xs, ys = mnistData_test.next_batch(TESTING_BATCH)
             acc = acc + sess.run(accurate, {real_input: xs, real_output: ys})
             j = j+1
-        acc = acc/(100/50)
+        acc = acc/(TESTING_DATA_SIZE/TESTING_BATCH)
         print("------accurate: ", repr(acc))
         with open(os.getcwd() + "/accuracy.txt", "a") as f:
             f.write("\n" + repr(sess.run(global_step)) + ", " + repr(acc))
