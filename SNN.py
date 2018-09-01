@@ -71,7 +71,7 @@ class SNNLayer(object):
         :param out_size: out_size is a int, determine the size of output
         """
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 0. / in_size, 4. / in_size, tf.float32))
+            [in_size, out_size], 2. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
@@ -237,7 +237,7 @@ real_output = tf.placeholder(tf.float32)
 drawing the graph of SNN
 
 """
-layer1 = SNNLayer(real_input_exp, 784, 800)
+layer1 = SNNLayer(real_input_exp, 784, 400)
 layer2 = SNNLayer(layer1.out, 400, 400)
 layer3 = SNNLayer(layer2.out, 400, 10)
 

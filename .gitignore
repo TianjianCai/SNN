@@ -1,3 +1,6 @@
 
 *.CTJ-PC
 logs/graph.zip
+.idea/*
+*.txt
+save/*
