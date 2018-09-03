@@ -71,7 +71,7 @@ class SNNLayer(object):
         :param out_size: out_size is a int, determine the size of output
         """
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 2. / in_size, 5. / in_size, tf.float32))
+            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
@@ -211,13 +211,19 @@ def loss_func(both):
                     z2, 1e-10, 1e10)),1e-10,1)))
     return loss
 
+
+def cal_lr(lr, step_num):
+    bias = 1e-4
+    return (lr*np.exp(step_num*-1e-4))+bias
+
+
 """
 K and K2 are used to calculate cost, see paper p.6
 learning_rate will decrease exponentially with the increase of step count, see paper p.8
 """
 K = 100
 K2 = 0.001
-learning_rate = 1e-1
+learning_rate = 1e-2
 
 TRAINING_DATA_SIZE = 50000
 TESTING_DATA_SIZE = 1000
@@ -312,7 +318,7 @@ training using mnist data
 i = 1
 while(1):
     xs, ys = mnistData_train.next_batch(TRAINING_BATCH)
-    [c, _, _, _] = sess.run([cost, train_op_1, train_op_2, train_op_3], {real_input: xs, real_output: ys, lr:(learning_rate*np.exp((sess.run(global_step)*-0.0003))+1e-3)})
+    [c, _, _, _] = sess.run([cost, train_op_1, train_op_2, train_op_3], {real_input: xs, real_output: ys, lr:cal_lr(learning_rate,sess.run(global_step))})
     sess.run(step_inc_op)
     tmpstr = repr(sess.run(global_step)) + ", " + repr(c)
     print(tmpstr)
