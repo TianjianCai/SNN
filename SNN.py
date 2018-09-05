@@ -227,8 +227,8 @@ learning_rate = 1e-2
 
 TRAINING_DATA_SIZE = 50000
 TESTING_DATA_SIZE = 1000
-TRAINING_BATCH = 100
-TESTING_BATCH = 100
+TRAINING_BATCH = 10
+TESTING_BATCH = 200
 
 """
 lr is learning rate to be used when training
@@ -236,7 +236,7 @@ real_input and real_output are the layer input and expected output
 """
 lr = tf.placeholder(tf.float32)
 real_input = tf.placeholder(tf.float32)
-real_input_exp = tf.exp(real_input)
+real_input_exp = tf.exp(real_input*1.79)
 real_output = tf.placeholder(tf.float32)
 
 """

@@ -163,12 +163,12 @@ class SNNLayer(object):
 
 
 TESTING_DATA_SIZE = 1000
-TESTING_BATCH = 100
+TESTING_BATCH = 200
 
 SLEEP_TIME = 10
 
 real_input = tf.placeholder(tf.float32)
-real_input_exp = tf.exp(real_input)
+real_input_exp = tf.exp(real_input*1.79)
 real_output = tf.placeholder(tf.float32)
 
 layer1 = SNNLayer(real_input_exp, 784, 400)
