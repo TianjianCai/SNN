@@ -20,7 +20,7 @@ k = torch.randn(1,dtype=torch.float32,requires_grad=True)
 b = torch.randn(1,dtype=torch.float32,requires_grad=True)
 l = torch.tensor(line,dtype=torch.float32)
 
-lr = 1e-2
+lr = 1e-3
 
 i = 0
 old_loss = 0
