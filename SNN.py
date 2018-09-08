@@ -4,56 +4,32 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 
-line = np.linspace(0,10,1000)
-groundtruth = -15*line + 49
-noise = np.random.normal(0,21,1000)
-noised_output = groundtruth+noise
+class SNNLayer(nn.Module):
+    def __init__(self,input_size,output_size):
+        super(SNNLayer, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.w = nn.Parameter(torch.rand(output_size,input_size)*(5./input_size)+(1./input_size))
+        print(self.w)
 
-
-lr = 1e-3
-
-
-class layer(nn.Module):
-    def __init__(self):
-        super(layer, self).__init__()
-        self.k = nn.Parameter(torch.zeros(1))
-        self.b = nn.Parameter(torch.zeros(1))
-
-    def forward(self, x):
-        return self.k.expand(x.size()) * x + self.b.expand(x.size())
-
-
-module = layer()
-
-i = 0
-old_loss = 0
-while True:
-    l = torch.tensor(line,dtype=torch.float32)
-    output = module(l)
-    loss = torch.mean((output - torch.tensor(noised_output, dtype=torch.float32)) ** 2)
-    loss.backward()
-    print(repr(i) + " loss: "+repr(loss.item()))
-    if abs(loss.item() - old_loss) < 1e-5:
-        break
-    else:
-        old_loss = loss.item()
-    with torch.no_grad():
-        module.k -= lr * module.k.grad
-        module.b -= lr * module.b.grad
-        module.k.grad.zero_()
-        module.b.grad.zero_()
-    i = i + 1
-
-output = module(l)
-o = output.data.tolist()
-print(o)
-
-print(module.k.item(),module.b.item())
-
-plt.scatter(line,noised_output,s=0.5)
-plt.plot(line,o,color='r')
-
-plt.show()
+    def forward(self, input):
+        batch_size = input.size()[0]
+        sorted_input, sorted_indices = input.sort(dim=1)
+        weight_outsize_not_sorted = self.w.repeat(batch_size,1).view(batch_size,self.output_size,self.input_size)
+        indice_outsize = sorted_indices.repeat(1,1,self.output_size).view(batch_size,self.output_size,self.input_size)
+        weight_outsize = torch.gather(weight_outsize_not_sorted,2,indice_outsize)
+        input_outsize = sorted_input.repeat(1,1,self.output_size).view(batch_size,self.output_size,self.input_size)
+        weight_input_mul = input_outsize * weight_outsize
+        for index in range(1,self.input_size,1):
+            weight_input_mul[:,:,index] += weight_input_mul[:,:,index-1]
+            weight_outsize[:,:,index] += weight_outsize[:,:,index-1]
+        out_all = weight_input_mul / torch.clamp(weight_outsize - 1, 1e-10, 1e10)
+        return out_all
 
 
 
+l = SNNLayer(3,4)
+list = [[1.,1.,1.],[1.,1.,1.],[2.,1.,5.],[9.,3.,4.],[2.,5.,9.]]
+layerin = torch.tensor(list)
+layerout = l(layerin)
+print(layerout)
