@@ -9,7 +9,7 @@ class SNNLayer(nn.Module):
         super(SNNLayer, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
-        self.w = nn.Parameter(torch.rand(output_size,input_size)*(5./input_size)+(1./input_size))
+        self.w = nn.Parameter(torch.rand(output_size,input_size)*(5./input_size)+(0./input_size))
         print(self.w)
 
     def forward(self, input):
@@ -24,7 +24,15 @@ class SNNLayer(nn.Module):
             weight_input_mul[:,:,index] += weight_input_mul[:,:,index-1]
             weight_outsize[:,:,index] += weight_outsize[:,:,index-1]
         out_all = weight_input_mul / torch.clamp(weight_outsize - 1, 1e-10, 1e10)
-        return out_all
+        out_all = torch.cat((out_all,1e10*torch.ones([batch_size,self.output_size,1])),2)
+        input_outsize = torch.cat((input_outsize,torch.zeros([batch_size,self.output_size,1])),2)
+        out_cond1 = out_all > input_outsize
+        out_cond2 = weight_outsize > 1.
+        out_cond2 = torch.cat((out_cond2,torch.ones([batch_size,self.output_size,1]).type('torch.ByteTensor')),2)
+        out_cond = out_cond1 * out_cond2
+        #print(out_cond)
+        _, index = torch.max(out_cond, 2)
+        return torch.gather(out_all,2,index.view(batch_size,self.output_size,1))
 
 
 
