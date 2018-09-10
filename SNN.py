@@ -55,7 +55,7 @@ class SNNLayer(nn.Module):
             dtypeFloat) * (3. / input_size) + (1. / input_size))
 
     def forward(self, input):
-        input = torch.exp(input * 1.79)
+        input = torch.clamp(torch.exp(input * 1.79),1,100)
         batch_size = input.size()[0]
         sorted_input, sorted_indices = input.sort(dim=1)
         sorted_input.type(dtypeFloat)
@@ -160,7 +160,6 @@ def backwardhook(self, grad_input, grad_output):
     print(grad_output)
 
 
-
 TRAINING_DATA_SIZE = 50000
 TRAINING_BATCH = 10
 K1 = 100
@@ -169,7 +168,6 @@ learning_rate = 1e0
 
 l1 = SNNLayer(784, 800)
 l2 = SNNLayer(800, 10)
-l1.register_backward_hook(backwardhook)
 loss = LossModule()
 weightsc = WeightSumCost(K1)
 l2c = L2Cost(K2)
@@ -201,7 +199,7 @@ while True:
     with torch.no_grad():
         l1_g = l1.w.grad
         l2_g = l2.w.grad
-
+        print(torch.sum(torch.isnan(l2_g)))
         g_sum_sqr = torch.clamp(
             torch.sum(
                 torch.mul(
