@@ -55,7 +55,7 @@ class SNNLayer(nn.Module):
             dtypeFloat) * (4. / input_size) + (5. / input_size))
 
     def forward(self, input):
-        input = torch.clamp(torch.exp(input * 1.79),1,1e5)
+        input = torch.clamp(input,1,1e5)
         batch_size = input.size()[0]
         sorted_input, sorted_indices = input.sort(dim=1)
         sorted_input.type(dtypeFloat)
@@ -87,16 +87,13 @@ class SNNLayer(nn.Module):
             dtypeFloat)), 2)[:, :, 1:self.input_size + 1]
         out_cond1 = out_all < input_outsize
         out_cond2 = weight_outsize_sum > 1.
-        out_all_cond = out_all * out_cond1.type(dtypeFloat) * out_cond2.type(dtypeFloat)
-        out_all_cond[out_all_cond == 0] = 1e10
-        _, index = torch.min(out_all_cond, 2)
-        return torch.gather(
-            out_all_cond,
-            2,
-            index.view(
-                batch_size,
-                self.output_size,
-                1)).squeeze()
+        out_cond = torch.cat(((out_cond1 & out_cond2).type(dtypeFloat),torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)),2)
+        line_insize = torch.arange(0,self.input_size+1).view(1,1,self.input_size+1)
+        out_cond_line = line_insize.type(dtypeFloat) * out_cond.type(dtypeFloat)
+        out_cond_line[out_cond_line == 0] = self.input_size
+        cond_index = (torch.argmin(out_cond_line,dim=2)).view(batch_size,self.output_size,1)
+        out_all = torch.cat((out_all,torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)*1e10),2)
+        return torch.gather(out_all,2,cond_index).squeeze()
 
 
 class LossModule(nn.Module):
@@ -161,7 +158,7 @@ TRAINING_DATA_SIZE = 50000
 TRAINING_BATCH = 10
 K1 = 100
 K2 = 0.001
-learning_rate = 1e-3
+learning_rate = 1e-1
 
 l1 = SNNLayer(784, 800)
 l2 = SNNLayer(800, 10)
@@ -181,6 +178,7 @@ while True:
     print(i)
     xs, ys = mnistData_train.next_batch(TRAINING_BATCH)
     xs = torch.tensor(xs)
+    xs = torch.exp(xs * 1.79)
     ys = torch.tensor(ys)
     layer1 = l1(xs)
     layer2 = l2(layer1)
