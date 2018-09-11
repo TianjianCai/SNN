@@ -52,10 +52,10 @@ class SNNLayer(nn.Module):
         self.input_size = input_size
         self.output_size = output_size
         self.w = nn.Parameter(torch.rand(output_size, input_size).type(
-            dtypeFloat) * (3. / input_size) + (1. / input_size))
+            dtypeFloat) * (4. / input_size) + (5. / input_size))
 
     def forward(self, input):
-        input = torch.clamp(torch.exp(input * 1.79),1,100)
+        input = torch.clamp(torch.exp(input * 1.79),1,1e5)
         batch_size = input.size()[0]
         sorted_input, sorted_indices = input.sort(dim=1)
         sorted_input.type(dtypeFloat)
@@ -77,24 +77,21 @@ class SNNLayer(nn.Module):
             batch_size, self.output_size, 1)
         for index in range(1, self.input_size, 1):
             weight_input_mul_sum = torch.cat((weight_input_mul_sum, weight_input_mul[:, :, index].view(
-                batch_size, self.output_size, 1) + weight_input_mul[:, :, index - 1].view(batch_size, self.output_size, 1)), 2)
+                batch_size, self.output_size, 1) + weight_input_mul_sum[:, :, index - 1].view(batch_size, self.output_size, 1)), 2)
             weight_outsize_sum = torch.cat((weight_outsize_sum, weight_outsize[:, :, index].view(
-                batch_size, self.output_size, 1) + weight_outsize[:, :, index - 1].view(batch_size, self.output_size, 1)), 2)
+                batch_size, self.output_size, 1) + weight_outsize_sum[:, :, index - 1].view(batch_size, self.output_size, 1)), 2)
         out_all = weight_input_mul_sum / \
             torch.clamp(weight_outsize_sum - 1, 1e-10, 1e10)
-        out_all = torch.cat(
-            (out_all, 1e10 * torch.ones([batch_size, self.output_size, 1]).type(dtypeFloat)), 2)
-        input_outsize = torch.cat(((torch.ones([batch_size, self.output_size, 2]) * np.inf).type(
-            dtypeFloat), input_outsize), 2)[:, :, 1:self.input_size + 2]
+
+        input_outsize = torch.cat((input_outsize,(torch.ones([batch_size, self.output_size, 1]) * np.inf).type(
+            dtypeFloat)), 2)[:, :, 1:self.input_size + 1]
         out_cond1 = out_all < input_outsize
         out_cond2 = weight_outsize_sum > 1.
-        out_cond2 = torch.cat((out_cond2, torch.ones(
-            [batch_size, self.output_size, 1]).type(dtypeByte)), 2)
-        out_cond = out_cond1 * out_cond2
-        # print(out_cond)
-        _, index = torch.max(out_cond, 2)
+        out_all_cond = out_all * out_cond1.type(dtypeFloat) * out_cond2.type(dtypeFloat)
+        out_all_cond[out_all_cond == 0] = 1e10
+        _, index = torch.min(out_all_cond, 2)
         return torch.gather(
-            out_all,
+            out_all_cond,
             2,
             index.view(
                 batch_size,
@@ -133,7 +130,7 @@ class WeightSumCost(nn.Module):
 
     def forward(self, input):
         input.type(dtypeFloat)
-        step1 = 1 - input
+        step1 = 1 - torch.sum(input,1)
         cond = step1 > 0
         step2 = step1 * cond.type(dtypeFloat)
         sum = torch.sum(step2)
@@ -164,7 +161,7 @@ TRAINING_DATA_SIZE = 50000
 TRAINING_BATCH = 10
 K1 = 100
 K2 = 0.001
-learning_rate = 1e0
+learning_rate = 1e-3
 
 l1 = SNNLayer(784, 800)
 l2 = SNNLayer(800, 10)
@@ -182,7 +179,6 @@ mnistData_train = MnistData(
 i = 0
 while True:
     print(i)
-
     xs, ys = mnistData_train.next_batch(TRAINING_BATCH)
     xs = torch.tensor(xs)
     ys = torch.tensor(ys)
@@ -195,11 +191,11 @@ while True:
     l2c2 = l2c(l2.w)
     cost = l + wsc1 + wsc2 + l2c1 + l2c2
     cost.backward()
-    print(cost)
+    print('cost: '+repr(cost.item()))
+    print(layer2)
     with torch.no_grad():
         l1_g = l1.w.grad
         l2_g = l2.w.grad
-        print(torch.sum(torch.isnan(l2_g)))
         g_sum_sqr = torch.clamp(
             torch.sum(
                 torch.mul(
