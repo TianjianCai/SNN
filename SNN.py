@@ -52,12 +52,13 @@ class SNNLayer(nn.Module):
         self.input_size = input_size
         self.output_size = output_size
         self.w = nn.Parameter(torch.rand(output_size, input_size).type(
-            dtypeFloat) * (4. / input_size) + (5. / input_size))
+            dtypeFloat) * (2. / input_size) + (0.5 / input_size))
 
     def forward(self, input):
-        input = torch.clamp(input,1,1e5)
+        input = torch.clamp(input,1,1e2)
         batch_size = input.size()[0]
         sorted_input, sorted_indices = input.sort(dim=1)
+        #print(sorted_input)
         sorted_input.type(dtypeFloat)
         sorted_indices.type(dtypeInt)
         weight_outsize_not_sorted = self.w.repeat(batch_size, 1).view(
@@ -82,17 +83,22 @@ class SNNLayer(nn.Module):
                 batch_size, self.output_size, 1) + weight_outsize_sum[:, :, index - 1].view(batch_size, self.output_size, 1)), 2)
         out_all = weight_input_mul_sum / \
             torch.clamp(weight_outsize_sum - 1, 1e-10, 1e10)
-
-        input_outsize = torch.cat((input_outsize,(torch.ones([batch_size, self.output_size, 1]) * np.inf).type(
+        input_outsize_left = torch.cat((input_outsize,(torch.ones([batch_size, self.output_size, 1]) * 1e5).type(
             dtypeFloat)), 2)[:, :, 1:self.input_size + 1]
-        out_cond1 = out_all < input_outsize
+        out_cond1 = input_outsize_left > out_all
+        out_cond1 = torch.cat(((out_cond1).type(dtypeFloat),torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)),2)
         out_cond2 = weight_outsize_sum > 1.
-        out_cond = torch.cat(((out_cond1 & out_cond2).type(dtypeFloat),torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)),2)
-        line_insize = torch.arange(0,self.input_size+1).view(1,1,self.input_size+1)
+        out_cond2 = torch.cat(((out_cond2).type(dtypeFloat),torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)),2)
+        out_cond = out_cond1 * out_cond2
+        line_insize = (torch.arange(0,self.input_size+1).view(1,1,self.input_size+1)).repeat(batch_size,self.output_size,1)
+
         out_cond_line = line_insize.type(dtypeFloat) * out_cond.type(dtypeFloat)
         out_cond_line[out_cond_line == 0] = self.input_size
-        cond_index = (torch.argmin(out_cond_line,dim=2)).view(batch_size,self.output_size,1)
-        out_all = torch.cat((out_all,torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)*1e10),2)
+        cond_index,_ = out_cond_line.sort(dim=2)
+
+        cond_index = cond_index[:,:,0].view(batch_size,self.output_size,1).type(dtypeInt)
+
+        out_all = torch.cat((out_all,torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)*1e5),2)
         return torch.gather(out_all,2,cond_index).squeeze()
 
 
@@ -127,7 +133,7 @@ class WeightSumCost(nn.Module):
 
     def forward(self, input):
         input.type(dtypeFloat)
-        step1 = 1 - torch.sum(input,1)
+        step1 = 1. - torch.sum(input,1)
         cond = step1 > 0
         step2 = step1 * cond.type(dtypeFloat)
         sum = torch.sum(step2)
@@ -145,7 +151,7 @@ class L2Cost(nn.Module):
 
 
 def cal_lr(lr, step_num):
-    bias = 1e-4
+    bias = 1e-2
     return (lr * np.exp(step_num * -1e-4)) + bias
 
 
@@ -156,9 +162,9 @@ def backwardhook(self, grad_input, grad_output):
 
 TRAINING_DATA_SIZE = 50000
 TRAINING_BATCH = 10
-K1 = 100
-K2 = 0.001
-learning_rate = 1e-1
+K1 = 1e2
+K2 = 1e-3
+learning_rate = 1e-2
 
 l1 = SNNLayer(784, 800)
 l2 = SNNLayer(800, 10)
@@ -189,7 +195,7 @@ while True:
     l2c2 = l2c(l2.w)
     cost = l + wsc1 + wsc2 + l2c1 + l2c2
     cost.backward()
-    print('cost: '+repr(cost.item()))
+    print('cost: '+repr(l.item())+" "+repr(wsc1.item()+wsc2.item()))
     print(layer2)
     with torch.no_grad():
         l1_g = l1.w.grad
