@@ -266,9 +266,10 @@ step_inc_op = tf.assign(global_step,global_step+1)
 draw the graph to calculate gradient and update wight operations 
 """
 grad_l1,grad_l2,grad_l3 = tf.gradients(cost,[layer1.weight,layer2.weight,layer3.weight],colocate_gradients_with_ops=True)
-grad_l1_normed = tf.divide(grad_l1.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l1.values))))
-grad_l2_normed = tf.divide(grad_l2.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l2.values))))
-grad_l3_normed = tf.divide(grad_l3.values,tf.sqrt(tf.reduce_sum(tf.square(grad_l3.values))))
+grad_sum_sqrt = tf.sqrt(tf.reduce_sum(tf.square(grad_l1.values)) + tf.reduce_sum(tf.square(grad_l2.values)) + tf.reduce_sum(tf.square(grad_l3.values)))
+grad_l1_normed = tf.divide(grad_l1.values,grad_sum_sqrt)
+grad_l2_normed = tf.divide(grad_l2.values,grad_sum_sqrt)
+grad_l3_normed = tf.divide(grad_l3.values,grad_sum_sqrt)
 train_op_1 = tf.scatter_add(layer1.weight,grad_l1.indices,-lr*grad_l1_normed)
 train_op_2 = tf.scatter_add(layer2.weight,grad_l2.indices,-lr*grad_l2_normed)
 train_op_3 = tf.scatter_add(layer3.weight,grad_l3.indices,-lr*grad_l3_normed)
