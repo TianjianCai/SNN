@@ -52,7 +52,7 @@ class SNNLayer(nn.Module):
         self.input_size = input_size
         self.output_size = output_size
         self.w = nn.Parameter(torch.rand(output_size, input_size).type(
-            dtypeFloat) * (2. / input_size) + (0.5 / input_size))
+            dtypeFloat) * (3. / input_size) + (0. / input_size))
 
     def forward(self, input):
         input = torch.clamp(input,1,1e2)
@@ -100,6 +100,20 @@ class SNNLayer(nn.Module):
 
         out_all = torch.cat((out_all,torch.ones([batch_size,self.output_size,1]).type(dtypeFloat)*1e5),2)
         return torch.gather(out_all,2,cond_index).squeeze()
+
+
+class AccuracyModule(nn.Module):
+    def __init__(self):
+        super(AccuracyModule, self).__init__()
+
+    def forward(self, input):
+        [output, groundtruth] = input
+        _, min_index = torch.min(output.type(dtypeFloat),dim=1)
+        _, gt_index = torch.max(groundtruth.type(dtypeFloat),dim=1)
+        print(min_index)
+        print(gt_index)
+        true_index = min_index == gt_index
+        return torch.mean(true_index.type(dtypeFloat))
 
 
 class LossModule(nn.Module):
@@ -164,10 +178,11 @@ TRAINING_DATA_SIZE = 50000
 TRAINING_BATCH = 10
 K1 = 1e2
 K2 = 1e-3
-learning_rate = 1e-2
+learning_rate = 1e-1
 
 l1 = SNNLayer(784, 800)
 l2 = SNNLayer(800, 10)
+acc = AccuracyModule()
 loss = LossModule()
 weightsc = WeightSumCost(K1)
 l2c = L2Cost(K2)
@@ -179,9 +194,21 @@ mnistData_train = MnistData(
         "/save/train_data_y"])
 
 
-i = 0
+
+try:
+    l1.load_state_dict(torch.load(os.getcwd()+"/save/l1_w.ckpt"))
+    l2.load_state_dict(torch.load(os.getcwd()+"/save/l2_w.ckpt"))
+    step = (np.load(os.getcwd()+"/save/stepcount.npy")).item() + 1
+    print("checkpoint at step " + repr(step) + " loaded successful")
+except:
+    torch.save(l1.state_dict(),os.getcwd()+"/save/l1_w.ckpt")
+    torch.save(l2.state_dict(), os.getcwd() + "/save/l2_w.ckpt")
+    step = 1
+    np.save(os.getcwd()+"/save/stepcount",step)
+    print("find no saved checkpoint, use new weights")
+
+
 while True:
-    print(i)
     xs, ys = mnistData_train.next_batch(TRAINING_BATCH)
     xs = torch.tensor(xs)
     xs = torch.exp(xs * 1.79)
@@ -195,8 +222,9 @@ while True:
     l2c2 = l2c(l2.w)
     cost = l + wsc1 + wsc2 + l2c1 + l2c2
     cost.backward()
-    print('cost: '+repr(l.item())+" "+repr(wsc1.item()+wsc2.item()))
-    print(layer2)
+    print("iteration " + repr(step) + ", cost: "+repr(l.item())+" "+repr(wsc1.item()+wsc2.item()))
+    print(acc([layer2,ys]))
+    #print(layer2)
     with torch.no_grad():
         l1_g = l1.w.grad
         l2_g = l2.w.grad
@@ -213,8 +241,13 @@ while True:
             1e10)
         l1_g = l1_g / g_sum_sqr
         l2_g = l2_g / g_sum_sqr
-        l1.w -= l1_g * cal_lr(learning_rate, i)
-        l2.w -= l2_g * cal_lr(learning_rate, i)
+        l1.w -= l1_g * cal_lr(learning_rate, step)
+        l2.w -= l2_g * cal_lr(learning_rate, step)
         l1.w.grad.zero_()
         l2.w.grad.zero_()
-    i += 1
+    if step % 10 == 0:
+        torch.save(l1.state_dict(), os.getcwd() + "/save/l1_w.ckpt")
+        torch.save(l2.state_dict(), os.getcwd() + "/save/l2_w.ckpt")
+        np.save(os.getcwd() + "/save/stepcount", step)
+        print("checkpoint saved")
+    step += 1
