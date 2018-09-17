@@ -71,7 +71,7 @@ class SNNLayer(object):
         :param out_size: out_size is a int, determine the size of output
         """
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
+            [in_size, out_size], 2. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
@@ -223,7 +223,7 @@ learning_rate will decrease exponentially with the increase of step count, see p
 """
 K = 100
 K2 = 0.001
-learning_rate = 1e-2
+learning_rate = 1e-1
 
 TRAINING_DATA_SIZE = 50000
 TESTING_DATA_SIZE = 1000

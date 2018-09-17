@@ -1,7 +1,0 @@
-
-*.CTJ-PC
-logs/graph.zip
-.idea/*
-*.txt
-save/*
-KITTI_data/*
