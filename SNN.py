@@ -70,9 +70,12 @@ class SNNLayer(object):
         :param in_size: in_size is a int, determine the size of input
         :param out_size: out_size is a int, determine the size of output
         """
+        in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
             [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
+        bias_layer_in = tf.ones([batch_num,1])
+        layer_in = tf.concat([layer_in,bias_layer_in],1)
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
             tf.tile(
@@ -189,8 +192,8 @@ def loss_func(both):
 
 
 def cal_lr(lr, step_num):
-    bias = 1e-4
-    return (lr*np.exp(step_num*-1e-4))+bias
+    bias = 1e-5
+    return (lr*np.exp(step_num*-1e-5))+bias
 
 
 """
@@ -199,7 +202,7 @@ learning_rate will decrease exponentially with the increase of step count, see p
 """
 K = 100
 K2 = 0.001
-learning_rate = 1e-1
+learning_rate = 1e-2
 
 TRAINING_DATA_SIZE = 50000
 TESTING_DATA_SIZE = 1000
@@ -301,7 +304,7 @@ while(1):
     print(tmpstr)
     with open(os.getcwd() + "/cost.txt", "a") as f:
         f.write("\n" + tmpstr)
-    if i % 10 == 0:
+    if i % 100 == 0:
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
         print("checkpoint saved")
         

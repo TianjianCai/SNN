@@ -66,9 +66,12 @@ class SNNLayer(object):
         :param in_size: in_size is a int, determine the size of input
         :param out_size: out_size is a int, determine the size of output
         """
+        in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
             [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
+        bias_layer_in = tf.ones([batch_num,1])
+        layer_in = tf.concat([layer_in,bias_layer_in],1)
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
             tf.tile(
