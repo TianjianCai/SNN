@@ -71,7 +71,7 @@ class SNNLayer(object):
         :param out_size: out_size is a int, determine the size of output
         """
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 2. / in_size, 5. / in_size, tf.float32))
+            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
@@ -121,11 +121,14 @@ class SNNLayer(object):
             _, result, _ = tf.while_loop(
                 loop_cond, add_func, loop_init(loop_matrix))
             return tf.reverse(result, [0])
-        weight_sumed = tf.map_fn(loop_func, weight_sorted)
-        weight_input_sumed = tf.map_fn(loop_func, weight_input_mul)
+        #weight_sumed = tf.map_fn(loop_func, weight_sorted)
+        weight_sumed = tf.cumsum(weight_sorted,axis=1)
+        #weight_input_sumed = tf.map_fn(loop_func, weight_input_mul)
+        weight_input_sumed = tf.cumsum(weight_input_mul,axis=1)
         output_spike_all = tf.divide(
             weight_input_sumed, tf.clip_by_value(tf.subtract(
                 weight_sumed, 1.), 1e-10, 1e10))
+        self.outspikeall = output_spike_all
         valid_cond_1 = tf.where(
             weight_sumed > 1,
             tf.ones_like(weight_sumed),
@@ -290,7 +293,7 @@ accurate = tf.reduce_mean(
 setting up tensorflow sessions
 """
 config = tf.ConfigProto(
-    #device_count={'GPU': 1}
+    device_count={'GPU': 0}
 )
 config.gpu_options.allow_growth = True
 sess = tf.Session(config=config)
