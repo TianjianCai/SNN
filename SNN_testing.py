@@ -163,7 +163,7 @@ accurate = tf.reduce_mean(
                     layer_output_pos, dtype=tf.float32)))
 
 config = tf.ConfigProto(
-    device_count={'GPU': 0}
+    device_count={'GPU': 1}
 )
 config.gpu_options.allow_growth = True
 sess = tf.Session(config=config)

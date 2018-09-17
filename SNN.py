@@ -266,7 +266,7 @@ accurate = tf.reduce_mean(
 setting up tensorflow sessions
 """
 config = tf.ConfigProto(
-    device_count={'GPU': 0}
+    device_count={'GPU': 1}
 )
 config.gpu_options.allow_growth = True
 sess = tf.Session(config=config)
