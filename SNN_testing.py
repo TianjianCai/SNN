@@ -158,13 +158,12 @@ real_input_01 = tf.where(real_input>0.5, tf.ones_like(real_input), tf.zeros_like
 real_input_exp = tf.exp(real_input_01*1.79)
 real_output = tf.placeholder(tf.float32)
 
-layer1 = SNNLayer(real_input_exp, 784, 400)
-layer2 = SNNLayer(layer1.out, 400, 400)
-layer3 = SNNLayer(layer2.out, 400, 10)
+layer1 = SNNLayer(real_input_exp, 784, 800)
+layer2 = SNNLayer(layer1.out, 800, 10)
 
 global_step = tf.Variable(1,dtype=tf.int64)
 
-layer_output_pos = tf.argmin(layer3.out, 1)
+layer_output_pos = tf.argmin(layer2.out, 1)
 real_output_pos = tf.argmax(real_output, 1)
 accurate = tf.reduce_mean(
     tf.where(
@@ -201,7 +200,7 @@ while True:
         saver.restore(sess, os.getcwd() + '/save/save.ckpt')
 
         xs, ys = mnistData_test.next_batch(TESTING_BATCH)
-        l3out = sess.run(layer3.out, {real_input: xs[0:10], real_output: ys[0:10]})
+        l3out = sess.run(layer2.out, {real_input: xs[0:10], real_output: ys[0:10]})
         print(l3out)
         print(ys[0:10])
         j = 0

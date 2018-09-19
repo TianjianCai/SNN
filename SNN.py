@@ -5,7 +5,7 @@ from tensorflow.examples.tutorials.mnist import input_data
 mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
 """
-MAX_SPIKE_TIME determine the maximum firing time. ideally maximum firing time should be inf, 
+MAX_SPIKE_TIME determine the maximum firing time. ideally maximum firing time should be inf,
 but 1e5 is plenty to use
 """
 MAX_SPIKE_TIME = 1e5
@@ -16,7 +16,13 @@ class MnistData(object):
     This class manage the mnist data. when initialized, self.xs_full and self.ys_full contain all the mnist data
     Use next_batch() function to get next batch of data in xs_full and ys_full
     """
-    def __init__(self, size, path=["/save/train_data_x", "/save/train_data_y"]):
+
+    def __init__(
+        self,
+        size,
+        path=[
+            "/save/train_data_x",
+            "/save/train_data_y"]):
         """
         This function will try to load saved data from path, if no saved data exists, it will load the data from
         tensorflow's example mnist data and save it to path
@@ -28,16 +34,17 @@ class MnistData(object):
         try:
             self.xs_full = np.load(os.getcwd() + path[0] + ".npy")
             self.ys_full = np.load(os.getcwd() + path[1] + ".npy")
-            print(path[0]+", "+path[1] + " "+"loaded")
-        except:
-            self.xs_full, self.ys_full = mnist.train.next_batch(size, shuffle=False)
+            print(path[0] + ", " + path[1] + " " + "loaded")
+        except BaseException:
+            self.xs_full, self.ys_full = mnist.train.next_batch(
+                size, shuffle=False)
             np.save(os.getcwd() + path[0], self.xs_full)
             np.save(os.getcwd() + path[1], self.ys_full)
-            print("cannot load " + path[0]+", "+path[1] +", get new data")
+            print("cannot load " + path[0] + ", " + path[1] + ", get new data")
         self.datasize = size
         self.pointer = 0
 
-    def next_batch(self,batch_size,shuffle=False):
+    def next_batch(self, batch_size, shuffle=False):
         """
         This function can get next batch of data from self.xs_full and self.ys_full
         It uses self.pointer to decide from where to return the xs and ys
@@ -69,6 +76,7 @@ class SNNLayer(object):
     self.out is the output of SNN layer, its' shape is [batch_size, out_size]
     self.weight is the weight of SNN layer, its' shape is [in_size, out_size]
     """
+
     def __init__(self, layer_in, in_size, out_size):
         """
         All input, output and weights are tensors.
@@ -80,8 +88,8 @@ class SNNLayer(object):
         self.weight = tf.Variable(tf.random_uniform(
             [in_size, out_size], 0. / in_size, 3. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
-        bias_layer_in = tf.ones([batch_num,1])
-        layer_in = tf.concat([layer_in,bias_layer_in],1)
+        bias_layer_in = tf.ones([batch_num, 1])
+        layer_in = tf.concat([layer_in, bias_layer_in], 1)
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
             tf.tile(
@@ -105,8 +113,8 @@ class SNNLayer(object):
                     x, tf.int32)), tf.cast(
                 input_sorted_indices, tf.float32))
         weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)
-        weight_sumed = tf.cumsum(weight_sorted,axis=1)
-        weight_input_sumed = tf.cumsum(weight_input_mul,axis=1)
+        weight_sumed = tf.cumsum(weight_sorted, axis=1)
+        weight_input_sumed = tf.cumsum(weight_input_mul, axis=1)
         output_spike_all = tf.divide(
             weight_input_sumed, tf.clip_by_value(tf.subtract(
                 weight_sumed, 1.), 1e-10, 1e10))
@@ -193,13 +201,13 @@ def loss_func(both):
         0., tf.log(
             tf.clip_by_value(tf.divide(
                 z1, tf.clip_by_value(
-                    z2, 1e-10, 1e10)),1e-10,1)))
+                    z2, 1e-10, 1e10)), 1e-10, 1)))
     return loss
 
 
 def cal_lr(lr, step_num):
     bias = 1e-4
-    return (lr*np.exp(step_num*-1e-5))+bias
+    return (lr * np.exp(step_num * -1e-5)) + bias
 
 
 """
@@ -221,49 +229,65 @@ real_input and real_output are the layer input and expected output
 """
 lr = tf.placeholder(tf.float32)
 real_input = tf.placeholder(tf.float32)
-real_input_01 = tf.where(real_input>0.5, tf.ones_like(real_input), tf.zeros_like(real_input))
-real_input_exp = tf.exp(real_input_01*1.79)
+real_input_01 = tf.where(
+    real_input > 0.5,
+    tf.ones_like(real_input),
+    tf.zeros_like(real_input))
+real_input_exp = tf.exp(real_input_01 * 1.79)
 real_output = tf.placeholder(tf.float32)
 
 """
 drawing the graph of SNN
 
 """
-layer1 = SNNLayer(real_input_exp, 784, 400)
-layer2 = SNNLayer(layer1.out, 400, 400)
-layer3 = SNNLayer(layer2.out, 400, 10)
+layer1 = SNNLayer(real_input_exp, 784, 800)
+layer2 = SNNLayer(layer1.out, 800, 10)
 
 """
 draw the graph to calculate cost to be optimized
 """
-layer_real_output = tf.concat([layer3.out, real_output], 1)
+layer_real_output = tf.concat([layer2.out, real_output], 1)
 output_loss = tf.reduce_mean(tf.map_fn(loss_func, layer_real_output))
-WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight) + w_sum_cost(layer3.weight)
-L2 = l2_func(layer1.weight) + l2_func(layer2.weight) + l2_func(layer3.weight)
+WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight)
+L2 = l2_func(layer1.weight) + l2_func(layer2.weight)
 cost = K * WC + K2 * L2 + output_loss
 
 """
 the step count itself and the operation to increase step count
 """
-global_step = tf.Variable(1,dtype=tf.int64)
-step_inc_op = tf.assign(global_step,global_step+1)
+global_step = tf.Variable(1, dtype=tf.int64)
+step_inc_op = tf.assign(global_step, global_step + 1)
 
 """
-draw the graph to calculate gradient and update wight operations 
+draw the graph to calculate gradient and update wight operations
 """
-grad_l1,grad_l2,grad_l3 = tf.gradients(cost,[layer1.weight,layer2.weight,layer3.weight],colocate_gradients_with_ops=True)
-grad_sum_sqrt = tf.sqrt(tf.reduce_sum(tf.square(grad_l1.values)) + tf.reduce_sum(tf.square(grad_l2.values)) + tf.reduce_sum(tf.square(grad_l3.values)))
-grad_l1_normed = tf.divide(grad_l1.values,grad_sum_sqrt)
-grad_l2_normed = tf.divide(grad_l2.values,grad_sum_sqrt)
-grad_l3_normed = tf.divide(grad_l3.values,grad_sum_sqrt)
-train_op_1 = tf.scatter_add(layer1.weight,grad_l1.indices,-lr*grad_l1_normed)
-train_op_2 = tf.scatter_add(layer2.weight,grad_l2.indices,-lr*grad_l2_normed)
-train_op_3 = tf.scatter_add(layer3.weight,grad_l3.indices,-lr*grad_l3_normed)
+grad_l1, grad_l2 = tf.gradients(
+    cost, [layer1.weight, layer2.weight], colocate_gradients_with_ops=True)
+grad_sum_sqrt = tf.clip_by_value(
+    tf.sqrt(
+        tf.reduce_sum(
+            tf.square(
+                grad_l1.values)) +
+        tf.reduce_sum(
+            tf.square(
+                grad_l2.values))),
+    1e-10,
+    10)
+grad_l1_normed = tf.divide(grad_l1.values, grad_sum_sqrt)
+grad_l2_normed = tf.divide(grad_l2.values, grad_sum_sqrt)
+grad_l1_sum = tf.reduce_sum(grad_l1_normed)
+grad_l1_abs_sum = tf.reduce_sum(tf.abs(grad_l1_normed))
+grad_l2_sum = tf.reduce_sum(grad_l2_normed)
+grad_l2_abs_sum = tf.reduce_sum(tf.abs(grad_l2_normed))
+train_op_1 = tf.scatter_add(
+    layer1.weight, grad_l1.indices, -lr * grad_l1_normed)
+train_op_2 = tf.scatter_add(
+    layer2.weight, grad_l2.indices, -lr * grad_l2_normed)
 
 """
 draw the graph to calculate accurate
 """
-layer_output_pos = tf.argmin(layer3.out, 1)
+layer_output_pos = tf.argmin(layer2.out, 1)
 real_output_pos = tf.argmax(real_output, 1)
 accurate = tf.reduce_mean(
     tf.where(
@@ -295,8 +319,16 @@ except BaseException:
 """
 set up mnist data to be used when training and testing(arrays, NOT tensors)
 """
-mnistData_train = MnistData(size=TRAINING_DATA_SIZE,path=["/save/train_data_x","/save/train_data_y"])
-mnistData_test = MnistData(size=TESTING_DATA_SIZE,path=["/save/test_data_x","/save/test_data_y"])
+mnistData_train = MnistData(
+    size=TRAINING_DATA_SIZE,
+    path=[
+        "/save/train_data_x",
+        "/save/train_data_y"])
+mnistData_test = MnistData(
+    size=TESTING_DATA_SIZE,
+    path=[
+        "/save/test_data_x",
+        "/save/test_data_y"])
 
 
 """
@@ -304,15 +336,16 @@ training using mnist data
 """
 i = 1
 while(1):
-    xs, ys = mnistData_train.next_batch(TRAINING_BATCH,shuffle=True)
-    [c, _, _, _] = sess.run([cost, train_op_1, train_op_2, train_op_3], {real_input: xs, real_output: ys, lr:cal_lr(learning_rate,sess.run(global_step))})
+    xs, ys = mnistData_train.next_batch(TRAINING_BATCH, shuffle=True)
+    [c,g1_0,g1_1,g2_0,g2_1, _, _] = sess.run([cost,grad_l1_sum,grad_l1_abs_sum,grad_l2_sum,grad_l2_abs_sum, train_op_1, train_op_2], {
+                         real_input: xs, real_output: ys, lr: cal_lr(learning_rate, sess.run(global_step))})
     sess.run(step_inc_op)
     if i % 500 == 0:
-        tmpstr = repr(sess.run(global_step)) + ", " + repr(c)
+        tmpstr = repr(sess.run(global_step)) + ", " + repr(c) + ", " + repr(g1_0) + ", " + repr(g1_1) + ", " + repr(g2_0) + ", " + repr(g2_1)
         with open(os.getcwd() + "/cost.txt", "a") as f:
             f.write("\n" + tmpstr)
         print(tmpstr)
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
         #print("checkpoint saved")
-        
+
     i = i + 1

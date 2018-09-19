@@ -159,13 +159,12 @@ real_input_01 = tf.where(real_input>0.5, tf.ones_like(real_input), tf.zeros_like
 real_input_exp = tf.exp(real_input_01*1.79)
 real_output = tf.placeholder(tf.float32)
 
-layer1 = SNNLayer(real_input_exp, 784, 400)
-layer2 = SNNLayer(layer1.out, 400, 400)
-layer3 = SNNLayer(layer2.out, 400, 10)
+layer1 = SNNLayer(real_input_exp, 784, 800)
+layer2 = SNNLayer(layer1.out, 800, 10)
 
 global_step = tf.Variable(1,dtype=tf.int64)
 
-layer_output_pos = tf.argmin(layer3.out, 1)
+layer_output_pos = tf.argmin(layer2.out, 1)
 real_output_pos = tf.argmax(real_output, 1)
 accurate = tf.reduce_mean(
     tf.where(
@@ -194,30 +193,22 @@ j = 0
 x = np.arange(0,4,0.01)
 y1 = np.zeros_like(x)
 y2 = np.zeros_like(x)
-y3 = np.zeros_like(x)
 while (j < TESTING_DATA_SIZE / TESTING_BATCH):
     xs, ys = mnistData_test.next_batch(TESTING_BATCH)
     l1out = sess.run(layer1.out, {real_input: xs, real_output: ys})
     l2out = sess.run(layer2.out, {real_input: xs, real_output: ys})
-    l3out = sess.run(layer3.out, {real_input: xs, real_output: ys})
     l1out = np.log(np.array(l1out))
     l2out = np.log(np.array(l2out))
-    l3out = np.log(np.array(l3out))
-    l3out = np.min(l3out,axis=1)
+    l2out = np.min(l2out,axis=1)
     l1hist,_ = np.histogram(l1out,bins=x)
     l2hist,_ = np.histogram(l2out, bins=x)
-    l3hist,_ = np.histogram(l3out, bins=x)
     l1hist = np.resize(l1hist, np.size(x))
     l2hist = np.resize(l2hist, np.size(x))
-    l3hist = np.resize(l3hist,np.size(x))
     y1 += l1hist
     y2 += l2hist
-    y3 += l3hist
     j = j + 1
 y1 /= np.sum(y1)
 y2 /= np.sum(y2)
-y3 /= np.sum(y3)
 plt.bar(x,y1,width=0.01,color='#ff0000af')
-plt.bar(x,y2,width=0.01,color='#00ff00af')
-plt.bar(x,y3,width=0.01,color='#0000ffaf')
+plt.bar(x,y2,width=0.01,color='#0000ffaf')
 plt.show()
