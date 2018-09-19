@@ -12,7 +12,7 @@ class MnistData(object):
     This class manage the mnist data. when initialized, self.xs_full and self.ys_full contain all the mnist data
     Use next_batch() function to get next batch of data in xs_full and ys_full
     """
-    def __init__(self, size, path=["/save/test_data_x", "/save/test_data_y"]):
+    def __init__(self, size, path=["/save/train_data_x", "/save/train_data_y"]):
         """
         This function will try to load saved data from path, if no saved data exists, it will load the data from
         tensorflow's example mnist data and save it to path
@@ -33,7 +33,7 @@ class MnistData(object):
         self.datasize = size
         self.pointer = 0
 
-    def next_batch(self,batch_size):
+    def next_batch(self,batch_size,shuffle=False):
         """
         This function can get next batch of data from self.xs_full and self.ys_full
         It uses self.pointer to decide from where to return the xs and ys
@@ -41,16 +41,22 @@ class MnistData(object):
         :return: return 2 arrays, the first one is image data, shape is [batch_size,784], last one is label,
                 shape is [batch_size,10]
         """
-        if self.pointer + batch_size < self.datasize:
-            pass
+        if shuffle:
+            index = np.random.randint(self.datasize, size=batch_size)
+            xs = self.xs_full[index, :]
+            ys = self.ys_full[index, :]
+            return xs, ys
         else:
-            self.pointer = 0
-            if batch_size >= self.datasize:
-                batch_size = self.datasize - 1
-        xs = self.xs_full[self.pointer:self.pointer + batch_size, :]
-        ys = self.ys_full[self.pointer:self.pointer + batch_size, :]
-        self.pointer = self.pointer + batch_size
-        return xs, ys
+            if self.pointer + batch_size < self.datasize:
+                pass
+            else:
+                self.pointer = 0
+                if batch_size >= self.datasize:
+                    batch_size = self.datasize - 1
+            xs = self.xs_full[self.pointer:self.pointer + batch_size, :]
+            ys = self.ys_full[self.pointer:self.pointer + batch_size, :]
+            self.pointer = self.pointer + batch_size
+            return xs, ys
 
 
 class SNNLayer(object):
@@ -68,7 +74,7 @@ class SNNLayer(object):
         """
         in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
+            [in_size, out_size], 0. / in_size, 3. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         bias_layer_in = tf.ones([batch_num,1])
         layer_in = tf.concat([layer_in,bias_layer_in],1)
@@ -146,8 +152,10 @@ TESTING_BATCH = 200
 
 SLEEP_TIME = 10
 
+lr = tf.placeholder(tf.float32)
 real_input = tf.placeholder(tf.float32)
-real_input_exp = tf.exp(real_input*1.79)
+real_input_01 = tf.where(real_input>0.5, tf.ones_like(real_input), tf.zeros_like(real_input))
+real_input_exp = tf.exp(real_input_01*1.79)
 real_output = tf.placeholder(tf.float32)
 
 layer1 = SNNLayer(real_input_exp, 784, 400)
