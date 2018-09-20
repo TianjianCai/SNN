@@ -235,7 +235,7 @@ learning_rate = 1e-2
 
 TRAINING_DATA_SIZE = 50000
 TESTING_DATA_SIZE = 1000
-TRAINING_BATCH = 10
+TRAINING_BATCH = 20
 TESTING_BATCH = 200
 
 """
@@ -332,7 +332,6 @@ except BaseException:
     print('cannot load checkpoint')
 
 
-sess.graph.finalize()
 process = psutil.Process(os.getpid())
 
 """
@@ -349,25 +348,5 @@ mnistData_test = MnistData(
         "/save/test_data_x",
         "/save/test_data_y"])
 
-
-"""
-training using mnist data
-"""
-i = 1
-while(1):
-    xs, ys = mnistData_train.next_batch(TRAINING_BATCH, shuffle=True)
-    [c,l,g1_0,g1_1,g2_0,g2_1, _, _] = sess.run([cost,output_loss,grad_l1_sum,grad_l1_abs_sum,grad_l2_sum,grad_l2_abs_sum, train_op_1, train_op_2], {
-                         real_input: xs, real_output: ys, lr: cal_lr(learning_rate, sess.run(global_step))})
-    sess.run(step_inc_op)
-    if i % 100 == 0:
-        tmpstr = repr(sess.run(global_step)) + ", " + repr(c) + ", "+repr(l) + ", " + repr(g1_0) + ", " + repr(g1_1) + ", " + repr(g2_0) + ", " + repr(g2_1)
-        with open(os.getcwd() + "/cost.txt", "a") as f:
-            f.write("\n" + tmpstr)
-        print(tmpstr)
-        saver.save(sess, os.getcwd() + '/save/save.ckpt')
-        #print("checkpoint saved")
-        mem = process.memory_percent()
-        if mem > 70:
-            exit(0)
-
-    i = i + 1
+print(sess.run(WC))
+print(sess.run(L2))
