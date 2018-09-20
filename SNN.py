@@ -10,7 +10,6 @@ but 1e5 is plenty to use
 """
 MAX_SPIKE_TIME = 1e5
 
-
 class MnistData(object):
     """
     This class manage the mnist data. when initialized, self.xs_full and self.ys_full contain all the mnist data
@@ -124,6 +123,7 @@ class SNNLayer(object):
             weight_sumed > 1,
             tf.ones_like(weight_sumed),
             tf.zeros_like(weight_sumed))
+
         def mov_left(input):
             input_unique,input_unique_index,_ = tf.unique_with_counts(input)
             input_unique_left = tf.slice(
@@ -326,6 +326,7 @@ try:
 except BaseException:
     print('cannot load checkpoint')
 
+
 sess.graph.finalize()
 
 """
@@ -349,12 +350,11 @@ training using mnist data
 i = 1
 while(1):
     xs, ys = mnistData_train.next_batch(TRAINING_BATCH, shuffle=True)
-    [c,g1_0,g1_1,g2_0,g2_1, _, _] = sess.run([cost,grad_l1_sum,grad_l1_abs_sum,grad_l2_sum,grad_l2_abs_sum, train_op_1, train_op_2], {
+    [c,l,g1_0,g1_1,g2_0,g2_1, _, _] = sess.run([cost,output_loss,grad_l1_sum,grad_l1_abs_sum,grad_l2_sum,grad_l2_abs_sum, train_op_1, train_op_2], {
                          real_input: xs, real_output: ys, lr: cal_lr(learning_rate, sess.run(global_step))})
-    del xs,ys
     sess.run(step_inc_op)
-    if i % 500 == 0:
-        tmpstr = repr(sess.run(global_step)) + ", " + repr(c) + ", " + repr(g1_0) + ", " + repr(g1_1) + ", " + repr(g2_0) + ", " + repr(g2_1)
+    if i % 100 == 0:
+        tmpstr = repr(sess.run(global_step)) + ", " + repr(c) + ", "+repr(l) + ", " + repr(g1_0) + ", " + repr(g1_1) + ", " + repr(g2_0) + ", " + repr(g2_1)
         with open(os.getcwd() + "/cost.txt", "a") as f:
             f.write("\n" + tmpstr)
         print(tmpstr)

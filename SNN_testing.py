@@ -112,6 +112,7 @@ class SNNLayer(object):
             weight_sumed > 1,
             tf.ones_like(weight_sumed),
             tf.zeros_like(weight_sumed))
+
         def mov_left(input):
             input_unique,input_unique_index,_ = tf.unique_with_counts(input)
             input_unique_left = tf.slice(
