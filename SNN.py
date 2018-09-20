@@ -56,6 +56,7 @@ class MnistData(object):
             index = np.random.randint(self.datasize, size=batch_size)
             xs = self.xs_full[index, :]
             ys = self.ys_full[index, :]
+            del index
             return xs, ys
         else:
             if self.pointer + batch_size < self.datasize:
@@ -86,7 +87,7 @@ class SNNLayer(object):
         """
         in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 0. / in_size, 3. / in_size, tf.float32))
+            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
         bias_layer_in = tf.ones([batch_num, 1])
         layer_in = tf.concat([layer_in, bias_layer_in], 1)
@@ -123,8 +124,17 @@ class SNNLayer(object):
             weight_sumed > 1,
             tf.ones_like(weight_sumed),
             tf.zeros_like(weight_sumed))
-        input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
-            [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+        def mov_left(input):
+            input_unique,input_unique_index,_ = tf.unique_with_counts(input)
+            input_unique_left = tf.slice(
+                tf.concat((input_unique,[MAX_SPIKE_TIME]),0),[1],[tf.shape(input_unique)[0]])
+            return tf.gather(input_unique_left,input_unique_index)
+        #input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
+         #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+        input_sorted_outsize_left = tf.tile(
+            tf.reshape(tf.map_fn(mov_left,input_sorted),[
+                    batch_num, in_size, 1]), [
+                1, 1, out_size])
         valid_cond_2 = tf.where(
             output_spike_all < input_sorted_outsize_left,
             tf.ones_like(input_sorted_outsize),
@@ -316,6 +326,8 @@ try:
 except BaseException:
     print('cannot load checkpoint')
 
+sess.graph.finalize()
+
 """
 set up mnist data to be used when training and testing(arrays, NOT tensors)
 """
@@ -339,6 +351,7 @@ while(1):
     xs, ys = mnistData_train.next_batch(TRAINING_BATCH, shuffle=True)
     [c,g1_0,g1_1,g2_0,g2_1, _, _] = sess.run([cost,grad_l1_sum,grad_l1_abs_sum,grad_l2_sum,grad_l2_abs_sum, train_op_1, train_op_2], {
                          real_input: xs, real_output: ys, lr: cal_lr(learning_rate, sess.run(global_step))})
+    del xs,ys
     sess.run(step_inc_op)
     if i % 500 == 0:
         tmpstr = repr(sess.run(global_step)) + ", " + repr(c) + ", " + repr(g1_0) + ", " + repr(g1_1) + ", " + repr(g2_0) + ", " + repr(g2_1)
