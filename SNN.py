@@ -132,14 +132,10 @@ class SNNLayer(object):
             return tf.gather(input_unique_left,input_unique_index)
         #input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
          #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
-        if firstlayer:
-            input_sorted_outsize_left = tf.tile(
-                tf.reshape(tf.map_fn(mov_left, input_sorted), [
-                    batch_num, in_size, 1]), [
-                    1, 1, out_size])
-        else:
-            input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
-                [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+        input_sorted_outsize_left = tf.tile(
+            tf.reshape(tf.map_fn(mov_left, input_sorted), [
+                batch_num, in_size, 1]), [
+                1, 1, out_size])
         valid_cond_2 = tf.where(
             output_spike_all < input_sorted_outsize_left,
             tf.ones_like(input_sorted_outsize),
@@ -182,7 +178,7 @@ def w_sum_cost(W):
     """
     part1 = tf.subtract(1., tf.reduce_sum(W, 0))
     part2 = tf.where(part1 > 0, part1, tf.zeros_like(part1))
-    return tf.reduce_sum(part2)
+    return tf.reduce_mean(part2)
 
 
 def l2_func(W):
@@ -192,7 +188,7 @@ def l2_func(W):
     :return: a tensor, it is a scalar
     """
     w_sqr = tf.square(W)
-    return tf.reduce_sum(w_sqr)
+    return tf.reduce_mean(w_sqr)
 
 
 def loss_func(both):
@@ -229,14 +225,14 @@ def cal_lr(lr, step_num):
 K and K2 are used to calculate cost, see paper p.6
 learning_rate will decrease exponentially with the increase of step count, see paper p.8
 """
-K = 10
+K = 100
 K2 = 0.001
-learning_rate = 1e-2
+learning_rate = 1e-3
 
 TRAINING_DATA_SIZE = 50000
 TESTING_DATA_SIZE = 1000
 TRAINING_BATCH = 10
-TESTING_BATCH = 200
+TESTING_BATCH = 100
 
 """
 lr is learning rate to be used when training

@@ -66,7 +66,8 @@ class SNNLayer(object):
     self.out is the output of SNN layer, its' shape is [batch_size, out_size]
     self.weight is the weight of SNN layer, its' shape is [in_size, out_size]
     """
-    def __init__(self, layer_in, in_size, out_size):
+
+    def __init__(self, layer_in, in_size, out_size,firstlayer=False):
         """
         All input, output and weights are tensors.
         :param layer_in: layer_in is a tensor, its' shape should be [batch_size,in_size]
@@ -75,10 +76,10 @@ class SNNLayer(object):
         """
         in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 0. / in_size, 3. / in_size, tf.float32))
+            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
         batch_num = tf.shape(layer_in)[0]
-        bias_layer_in = tf.ones([batch_num,1])
-        layer_in = tf.concat([layer_in,bias_layer_in],1)
+        bias_layer_in = tf.ones([batch_num, 1])
+        layer_in = tf.concat([layer_in, bias_layer_in], 1)
         _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
         map_x = tf.reshape(
             tf.tile(
@@ -102,8 +103,8 @@ class SNNLayer(object):
                     x, tf.int32)), tf.cast(
                 input_sorted_indices, tf.float32))
         weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)
-        weight_sumed = tf.cumsum(weight_sorted,axis=1)
-        weight_input_sumed = tf.cumsum(weight_input_mul,axis=1)
+        weight_sumed = tf.cumsum(weight_sorted, axis=1)
+        weight_input_sumed = tf.cumsum(weight_input_mul, axis=1)
         output_spike_all = tf.divide(
             weight_input_sumed, tf.clip_by_value(tf.subtract(
                 weight_sumed, 1.), 1e-10, 1e10))
@@ -112,8 +113,18 @@ class SNNLayer(object):
             weight_sumed > 1,
             tf.ones_like(weight_sumed),
             tf.zeros_like(weight_sumed))
-        input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
-            [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+
+        def mov_left(input):
+            input_unique,input_unique_index,_ = tf.unique_with_counts(input)
+            input_unique_left = tf.slice(
+                tf.concat((input_unique,[MAX_SPIKE_TIME]),0),[1],[tf.shape(input_unique)[0]])
+            return tf.gather(input_unique_left,input_unique_index)
+        #input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
+         #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+        input_sorted_outsize_left = tf.tile(
+            tf.reshape(tf.map_fn(mov_left, input_sorted), [
+                batch_num, in_size, 1]), [
+                1, 1, out_size])
         valid_cond_2 = tf.where(
             output_spike_all < input_sorted_outsize_left,
             tf.ones_like(input_sorted_outsize),
@@ -148,7 +159,7 @@ class SNNLayer(object):
         self.out = layer_out
 
 
-TESTING_DATA_SIZE = 1000
+TESTING_DATA_SIZE = 50000
 TESTING_BATCH = 100
 
 SLEEP_TIME = 10
@@ -183,12 +194,13 @@ sess.run(tf.global_variables_initializer())
 saver = tf.train.Saver()
 
 saved_path = os.getcwd() + "/save/checkpoint"
-data_path = ["/save/test_data_x", "/save/test_data_y"]
+data_path = ["/save/train_data_x", "/save/train_data_y"]
 
 mnistData_test = MnistData(size=TESTING_DATA_SIZE,path=data_path)
 
 print("testing started...")
 saver.restore(sess, os.getcwd() + '/save/save.ckpt')
+"""
 j = 0
 x = np.arange(0,4,0.01)
 y1 = np.zeros_like(x)
@@ -212,3 +224,15 @@ y2 /= np.sum(y2)
 plt.bar(x,y1,width=0.01,color='#ff0000af')
 plt.bar(x,y2,width=0.01,color='#0000ffaf')
 plt.show()
+"""
+j=0
+totalloop = TESTING_DATA_SIZE/TESTING_BATCH
+cum = 0
+while j < totalloop:
+    xs,ys = mnistData_test.next_batch(TESTING_BATCH)
+    cum += sess.run(accurate,{real_input:xs,real_output:ys})
+    if j%(totalloop/50)==0:
+        print(repr(j)+"/"+repr(totalloop))
+    j += 1
+acc = cum/totalloop
+print("accurate: "+repr(acc))
