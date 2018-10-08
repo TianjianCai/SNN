@@ -8,36 +8,33 @@ class SNNLayer(object):
     self.out is the output of SNN layer, its' shape is [batch_size, out_size]
     self.weight is the weight of SNN layer, its' shape is [in_size, out_size]
     """
-    def __init__(self, layer_in, in_size, out_size):
-        """
-        All input, output and weights are tensors.
-        :param layer_in: layer_in is a tensor, its' shape should be [batch_size,in_size]
-        :param in_size: in_size is a int, determine the size of input
-        :param out_size: out_size is a int, determine the size of output
-        """
-        in_size = in_size + 1
+    def __init__(self, in_size, out_size):
+        self.out_size = out_size
+        self.in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
+            [self.in_size, self.out_size], 1. / self.in_size, 5. / self.in_size, tf.float32))
+
+    def forward(self,layer_in):
         batch_num = tf.shape(layer_in)[0]
         bias_layer_in = tf.ones([batch_num, 1])
         layer_in = tf.concat([layer_in, bias_layer_in], 1)
-        _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
+        _, input_sorted_indices = tf.nn.top_k(-layer_in, self.in_size, False)
         map_x = tf.reshape(
             tf.tile(
                 tf.reshape(
                     tf.range(
                         start=0, limit=batch_num, delta=1), [
                         batch_num, 1]), [
-                    1, in_size]), [
-                batch_num, in_size, 1])
+                    1, self.in_size]), [
+                batch_num, self.in_size, 1])
         input_sorted_map = tf.concat(
-            [map_x, tf.reshape(input_sorted_indices, [batch_num, in_size, 1])], 2)
+            [map_x, tf.reshape(input_sorted_indices, [batch_num, self.in_size, 1])], 2)
         input_sorted = tf.gather_nd(params=layer_in, indices=input_sorted_map)
         input_sorted_outsize = tf.tile(
             tf.reshape(
                 input_sorted, [
-                    batch_num, in_size, 1]), [
-                1, 1, out_size])
+                    batch_num, self.in_size, 1]), [
+                1, 1, self.out_size])
         weight_sorted = tf.map_fn(
             lambda x: tf.gather(
                 self.weight, tf.cast(
@@ -56,16 +53,17 @@ class SNNLayer(object):
             tf.zeros_like(weight_sumed))
 
         def mov_left(input):
-            input_unique,input_unique_index,_ = tf.unique_with_counts(input)
+            input_unique, input_unique_index, _ = tf.unique_with_counts(input)
             input_unique_left = tf.slice(
-                tf.concat((input_unique,[MAX_SPIKE_TIME]),0),[1],[tf.shape(input_unique)[0]])
-            return tf.gather(input_unique_left,input_unique_index)
-        #input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
-         #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+                tf.concat((input_unique, [MAX_SPIKE_TIME]), 0), [1], [tf.shape(input_unique)[0]])
+            return tf.gather(input_unique_left, input_unique_index)
+
+        # input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
+        #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
         input_sorted_outsize_left = tf.tile(
             tf.reshape(tf.map_fn(mov_left, input_sorted), [
-                batch_num, in_size, 1]), [
-                1, 1, out_size])
+                batch_num, self.in_size, 1]), [
+                1, 1, self.out_size])
         valid_cond_2 = tf.where(
             output_spike_all < input_sorted_outsize_left,
             tf.ones_like(input_sorted_outsize),
@@ -78,9 +76,9 @@ class SNNLayer(object):
             tf.ones_like(valid_cond_1),
             tf.zeros_like(valid_cond_1))
         valid_cond_both_extend = tf.concat(
-            [valid_cond_both, tf.ones([batch_num, 1, out_size])], 1)
+            [valid_cond_both, tf.ones([batch_num, 1, self.out_size])], 1)
         output_spike_all_extent = tf.concat(
-            [output_spike_all, MAX_SPIKE_TIME * tf.ones([batch_num, 1, out_size])], 1)
+            [output_spike_all, MAX_SPIKE_TIME * tf.ones([batch_num, 1, self.out_size])], 1)
         output_valid_both = tf.concat(
             [output_spike_all_extent, valid_cond_both_extend], 1)
 
@@ -89,15 +87,16 @@ class SNNLayer(object):
                 tf.slice(
                     both, [
                         0, 0], [
-                        in_size + 1, out_size]))
+                        self.in_size + 1, self.out_size]))
             valid = tf.transpose(
-                tf.slice(both, [in_size + 1, 0], [in_size + 1, out_size]))
+                tf.slice(both, [self.in_size + 1, 0], [self.in_size + 1, self.out_size]))
             pos = tf.cast(tf.where(tf.equal(valid, 1)), tf.int32)
-            pos_reduced = tf.concat([tf.reshape(tf.range(0, out_size), [out_size, 1]), tf.reshape(
-                tf.segment_min(pos[:, 1], pos[:, 0]), [out_size, 1])], 1)
+            pos_reduced = tf.concat([tf.reshape(tf.range(0, self.out_size), [self.out_size, 1]), tf.reshape(
+                tf.segment_min(pos[:, 1], pos[:, 0]), [self.out_size, 1])], 1)
             return tf.gather_nd(value, pos_reduced)
+
         layer_out = tf.map_fn(select_output, output_valid_both)
-        self.out = layer_out
+        return layer_out
 
 
 def w_sum_cost(W):

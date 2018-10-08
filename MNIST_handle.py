@@ -1,5 +1,6 @@
 import struct
 import numpy as np
+import os
 
 
 def read_idx(filename):
@@ -10,6 +11,8 @@ def read_idx(filename):
 
 class MnistData(object):
     def __init__(self,path=["MNIST/train-images.idx3-ubyte","MNIST/train-labels.idx1-ubyte"]):
+        path[0] = os.getcwd() + "/" + path[0]
+        path[1] = os.getcwd() + "/" + path[1]
         try:
             self.xs_full = read_idx(path[0]).reshape(-1,784)/255
             ys_full = read_idx(path[1]).reshape(-1,1)
