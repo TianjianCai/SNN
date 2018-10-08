@@ -121,14 +121,10 @@ class SNNLayer(object):
             return tf.gather(input_unique_left,input_unique_index)
         #input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
          #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
-        if firstlayer:
-            input_sorted_outsize_left = tf.tile(
-                tf.reshape(tf.map_fn(mov_left, input_sorted), [
-                    batch_num, in_size, 1]), [
-                    1, 1, out_size])
-        else:
-            input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
-                [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
+        input_sorted_outsize_left = tf.tile(
+            tf.reshape(tf.map_fn(mov_left, input_sorted), [
+                batch_num, in_size, 1]), [
+                1, 1, out_size])
         valid_cond_2 = tf.where(
             output_spike_all < input_sorted_outsize_left,
             tf.ones_like(input_sorted_outsize),
