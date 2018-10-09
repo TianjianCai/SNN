@@ -98,6 +98,11 @@ class SNNLayer(object):
         layer_out = tf.map_fn(select_output, output_valid_both)
         return layer_out
 
+    def cost(self):
+        wsc = w_sum_cost(self.weight)
+        l2 = l2_func(self.weight)
+        return wsc,l2
+
 
 def w_sum_cost(W):
     part1 = tf.subtract(1., tf.reduce_sum(W, 0))
