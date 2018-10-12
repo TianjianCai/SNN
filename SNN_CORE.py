@@ -111,7 +111,11 @@ def w_sum_cost(W):
 
 
 def l2_func(W):
-    w_sqr = tf.square(W)
+    #w_sqr = tf.square(W)
+    '''
+    Try L1 loss here
+    '''
+    w_sqr = tf.abs(W)
     return tf.reduce_mean(w_sqr)
 
 

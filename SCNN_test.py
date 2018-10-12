@@ -42,13 +42,13 @@ Here is a reshape, because TensorFlow DO NOT SUPPORT tf.extract_image_patches gr
 input_exp = tf.reshape(tf.exp(input_real*1.79),[TESTING_BATCH,28,28,1])
 
 layer1 = SCNN(kernel_size=5,in_channel=1,out_channel=32,strides=2)
-layer2 = SCNN(kernel_size=5,in_channel=32,out_channel=8,strides=2)
-#layer3 = SCNN(kernel_size=5,in_channel=16,out_channel=8,strides=2)
-layer4 = SNN_CORE.SNNLayer(in_size=392,out_size=10)
+layer2 = SCNN(kernel_size=3,in_channel=32,out_channel=16,strides=2)
+#layer3 = SNN_CORE.SNNLayer(in_size=784,out_size=10)
+layer4 = SNN_CORE.SNNLayer(in_size=784,out_size=10)
 l1out = layer1.forward(input_exp)
 l2out = layer2.forward(l1out)
-#l3out = layer3.forward(l2out)
-l4out = layer4.forward(tf.reshape(l2out,[-1,392]))
+#l3out = layer3.forward(tf.reshape(l2out,[-1,784]))
+l4out = layer4.forward(tf.reshape(l2out,[-1,784]))
 
 
 layer_real_output = tf.concat([l4out,output_real],1)
