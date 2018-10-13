@@ -7,23 +7,6 @@ import psutil
 import MNIST_handle
 import SNN_CORE
 
-class SCNN(object):
-    def __init__(self,kernel_size=3,in_channel=1,out_channel=1,strides=1):
-        self.kernel_size = kernel_size
-        self.in_channel = in_channel
-        self.out_channel = out_channel
-        self.strides = strides
-        self.kernel = SNN_CORE.SNNLayer(in_size=self.kernel_size*self.kernel_size*self.in_channel,out_size=self.out_channel)
-
-    def forward(self,layer_in):
-        input_size = tf.shape(layer_in)
-        patches = tf.extract_image_patches(images=layer_in,ksizes=[1,self.kernel_size,self.kernel_size,1],strides=[1,self.strides,self.strides,1],rates=[1,1,1,1],padding="SAME")
-        patches_flatten = tf.reshape(patches,[input_size[0],-1,self.in_channel*self.kernel_size*self.kernel_size])
-        patches_infpad = tf.where(tf.less(patches_flatten,0.9),SNN_CORE.MAX_SPIKE_TIME*tf.ones_like(patches_flatten),patches_flatten)
-        img_raw = tf.map_fn(self.kernel.forward,patches_infpad)
-        img_reshaped = tf.reshape(img_raw,[input_size[0],input_size[1]//self.strides,input_size[2]//self.strides,self.out_channel])
-        return img_reshaped
-
 
 K = 1e2
 K2 = 1e-3
@@ -41,11 +24,42 @@ Here is a reshape, because TensorFlow DO NOT SUPPORT tf.extract_image_patches gr
 input_exp = tf.reshape(tf.exp(input_real*1.79),[TRAINING_BATCH,28,28,1])
 
 
+layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=16,strides=2)
+layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=32,strides=2)
+layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=64,strides=2)
+layer4 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=64,out_channel=32,strides=2)
+layer5 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=32,out_channel=16,strides=2)
+layer6 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=16,out_channel=2,strides=2)
+layerout3 = layer3.forward(layer2.forward(layer1.forward(input_exp)))
+layerout6 = layer6.forward(layer5.forward(layer4.forward(layerout3)))
+
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+xs,ys = mnist.next_batch(10)
+xs = np.reshape(xs,[-1,28,28,1])
+l3 = sess.run(layerout3,{input_real:xs})
+print(np.shape(l3))
+out = sess.run(layerout6,{input_real:xs})
+print(np.shape(out))
+f1 = plt.subplot(221)
+f2 = plt.subplot(222)
+f3 = plt.subplot(223)
+f4 = plt.subplot(224)
+f1.imshow(out[0,:,:,0])
+f2.imshow(out[0,:,:,1])
+f3.imshow(l3[0,:,:,0])
+f4.imshow(l3[0,:,:,1])
+plt.show()
+exit(0)
+
+
+
+
 '''
 Define the Network
 '''
-layer1 = SCNN(kernel_size=5,in_channel=1,out_channel=32,strides=2)
-layer2 = SCNN(kernel_size=3,in_channel=32,out_channel=16,strides=2)
+layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=32,strides=2)
+layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=16,strides=2)
 #layer3 = SNN_CORE.SNNLayer(in_size=784,out_size=10)
 layer4 = SNN_CORE.SNNLayer(in_size=784,out_size=10)
 l1out = layer1.forward(input_exp)

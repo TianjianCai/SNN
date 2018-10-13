@@ -12,7 +12,7 @@ class SNNLayer(object):
         self.out_size = out_size
         self.in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
-            [self.in_size, self.out_size], 1. / self.in_size, 6. / self.in_size, tf.float32))
+            [self.in_size, self.out_size], 10. / self.in_size, 20. / self.in_size, tf.float32))
 
     def forward(self,layer_in):
         batch_num = tf.shape(layer_in)[0]
@@ -104,6 +104,52 @@ class SNNLayer(object):
         return wsc,l2
 
 
+class SCNN(object):
+    def __init__(self, kernel_size=3, in_channel=1, out_channel=1, strides=1):
+        self.kernel_size = kernel_size
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+        self.strides = strides
+        self.kernel = SNNLayer(in_size=self.kernel_size * self.kernel_size * self.in_channel,
+                                        out_size=self.out_channel)
+
+    def forward(self, layer_in):
+        input_size = tf.shape(layer_in)
+        patches = tf.extract_image_patches(images=layer_in, ksizes=[1, self.kernel_size, self.kernel_size, 1],
+                                           strides=[1, self.strides, self.strides, 1], rates=[1, 1, 1, 1],
+                                           padding="SAME")
+        patches_flatten = tf.reshape(patches,
+                                     [input_size[0], -1, self.in_channel * self.kernel_size * self.kernel_size])
+        patches_infpad = tf.where(tf.less(patches_flatten, 0.9),
+                                  MAX_SPIKE_TIME * tf.ones_like(patches_flatten), patches_flatten)
+        img_raw = tf.map_fn(self.kernel.forward, patches_infpad)
+        img_reshaped = tf.reshape(img_raw, [input_size[0], tf.cast(tf.math.ceil(input_size[1] / self.strides),tf.int32), tf.cast(tf.math.ceil(input_size[2] / self.strides),tf.int32),
+                                            self.out_channel])
+        return img_reshaped
+
+
+class SCNN_upsample(object):
+    def __init__(self, kernel_size=3, in_channel=1, out_channel=1, strides=1):
+        self.kernel_size = kernel_size
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+        self.strides = strides
+        self.scnn = SCNN(self.kernel_size, self.in_channel, self.out_channel, 1)
+
+    def upsample(self, in_image, strides):
+        in_size = tf.shape(in_image)
+        img_reshaped = tf.reshape(in_image, [in_size[0], in_size[1], 1, in_size[2], 1, in_size[3]])
+        img_large1 = tf.concat((img_reshaped,MAX_SPIKE_TIME*tf.ones([in_size[0],in_size[1],1,in_size[2],strides-1,in_size[3]])),axis=4)
+        img_large2 = tf.concat((img_large1,MAX_SPIKE_TIME*tf.ones([in_size[0],in_size[1],strides-1,in_size[2],strides,in_size[3]])),axis=2)
+        #img_large = tf.tile(img_reshaped, [1, 1, strides, 1, strides, 1])
+        img_large_reshaped = tf.reshape(img_large2, [in_size[0], in_size[1] * strides, in_size[2] * strides, in_size[3]])
+        return img_large_reshaped
+
+    def forward(self, layer_in):
+        layer_in_upsample = self.upsample(layer_in, self.strides)
+        return self.scnn.forward(layer_in_upsample)
+
+
 def w_sum_cost(W):
     part1 = tf.subtract(1., tf.reduce_sum(W, 0))
     part2 = tf.where(part1 > 0, part1, tf.zeros_like(part1))
@@ -111,11 +157,7 @@ def w_sum_cost(W):
 
 
 def l2_func(W):
-    #w_sqr = tf.square(W)
-    '''
-    Try L1 loss here
-    '''
-    w_sqr = tf.abs(W)
+    w_sqr = tf.square(W)
     return tf.reduce_mean(w_sqr)
 
 
