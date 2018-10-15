@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
 import numpy as np
 import tensorflow as tf
 import os
@@ -10,9 +11,9 @@ import SNN_CORE
 
 K = 1e2
 K2 = 1e-3
-W1 = 0.9
-W2 = 0.1
-TRAINING_BATCH = 1
+W1 = 0.99
+W2 = 0.01
+TRAINING_BATCH = 10
 learning_rate = 1e-3
 
 mnist = MNIST_handle.MnistData()
@@ -40,13 +41,18 @@ output_real_back = tf.multiply(input_real_invert,back_4d)
 layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=8,strides=2)
 layer2 = SNN_CORE.SCNN(kernel_size=5,in_channel=8,out_channel=16,strides=2)
 layer3 = SNN_CORE.SCNN(kernel_size=5,in_channel=16,out_channel=32,strides=2)
-layer4 = SNN_CORE.SCNN(kernel_size=5,in_channel=32,out_channel=64,strides=2)
-layer5 = SNN_CORE.SCNN_upsample(kernel_size=11,in_channel=64,out_channel=32,strides=4)
-layer6 = SNN_CORE.SCNN_upsample(kernel_size=11,in_channel=32,out_channel=11,strides=4)
-layerout3 = layer3.forward(layer2.forward(layer1.forward(input_exp)))
-layerout6 = layer6.forward(layer5.forward(layer4.forward(layerout3)))
+layer4 = SNN_CORE.SCNN_upsample(kernel_size=5,in_channel=32,out_channel=16,strides=2)
+layer5 = SNN_CORE.SCNN_upsample(kernel_size=5,in_channel=32,out_channel=16,strides=2)
+layer6 = SNN_CORE.SCNN_upsample(kernel_size=5,in_channel=24,out_channel=11,strides=2)
+layerout1 = layer1.forward(input_exp)
+layerout2 = layer2.forward(layerout1)
+layerout3 = layer3.forward(layerout2)
+layerout4 = tf.concat((layer4.forward(layerout3),layerout2),axis=3)
+layerout5 = tf.concat((layer5.forward(layerout4),layerout1),axis=3)
+layerout6 = layer6.forward(layerout5)
 
 layerout_first = tf.one_hot(tf.argmin(layerout6,axis=3),depth=11)
+layerout_first_count = tf.reduce_sum(layerout_first)
 
 both_front = tf.concat((layerout6,output_real_front),axis=3)
 both_back = tf.concat((layerout6,output_real_back),axis=3)
@@ -64,7 +70,7 @@ back_loss = tf.reduce_mean(tf.map_fn(loss_func_3d,both_back))
 wsc1,l21 = layer1.kernel.cost()
 wsc2,l22 = layer2.kernel.cost()
 wsc3,l23 = layer3.kernel.cost()
-wsc4,l24 = layer4.kernel.cost()
+wsc4,l24 = layer4.scnn.kernel.cost()
 wsc5,l25 = layer5.scnn.kernel.cost()
 wsc6,l26 = layer6.scnn.kernel.cost()
 
@@ -73,7 +79,7 @@ l2 = l21+l22+l23+l24+l25+l26
 
 cost = K*wsc + K2*l2 + W1*front_loss + W2*back_loss
 
-g_l1,g_l2,g_l3,g_l4,g_l5,g_l6 = tf.gradients(cost,[layer1.kernel.weight,layer2.kernel.weight,layer3.kernel.weight,layer4.kernel.weight,layer5.scnn.kernel.weight,layer6.scnn.kernel.weight])
+g_l1,g_l2,g_l3,g_l4,g_l5,g_l6 = tf.gradients(cost,[layer1.kernel.weight,layer2.kernel.weight,layer3.kernel.weight,layer4.scnn.kernel.weight,layer5.scnn.kernel.weight,layer6.scnn.kernel.weight])
 grad_sum_sqrt = tf.clip_by_value(
     tf.sqrt(
         tf.reduce_sum(
@@ -111,7 +117,7 @@ train_op_2 = tf.scatter_add(
 train_op_3 = tf.scatter_add(
     layer3.kernel.weight, g_l3.indices, -lr * g_l3_normed)
 train_op_4 = tf.scatter_add(
-    layer4.kernel.weight, g_l4.indices, -lr * g_l4_normed)
+    layer4.scnn.kernel.weight, g_l4.indices, -lr * g_l4_normed)
 train_op_5 = tf.scatter_add(
     layer5.scnn.kernel.weight, g_l5.indices, -lr * g_l5_normed)
 train_op_6 = tf.scatter_add(
@@ -125,10 +131,12 @@ sess.run(tf.global_variables_initializer())
 
 plt.ion()
 fig = plt.figure()
-p1 = fig.add_subplot(221)
-p2 = fig.add_subplot(222)
-p3 = fig.add_subplot(223)
-p4 = fig.add_subplot(224)
+p1 = fig.add_subplot(231)
+p2 = fig.add_subplot(232)
+p3 = fig.add_subplot(233)
+p4 = fig.add_subplot(234)
+p5 = fig.add_subplot(235)
+p6 = fig.add_subplot(236)
 
 
 def cal_lr(lr, step_num):
@@ -136,18 +144,26 @@ def cal_lr(lr, step_num):
     return (lr * np.exp(step_num * -1e-5)) + bias
 
 
-xs, ys = mnist.next_batch(TRAINING_BATCH)
-xs = np.reshape(xs, [-1, 28, 28, 1])
+saver = tf.train.Saver()
+try:
+    saver.restore(sess, os.getcwd() + '/save/save.ckpt')
+    print('checkpoint loaded')
+except BaseException:
+    print('cannot load checkpoint')
+
 
 while(True):
-
-    [c,o,lo,_,_,_,_,_,_] = sess.run([cost,layerout_first,layerout6,train_op_1,train_op_2,train_op_3,train_op_4,train_op_5,train_op_6], {input_real: xs, output_real: ys,lr: cal_lr(learning_rate, sess.run(global_step))})
+    xs, ys = mnist.next_batch(TRAINING_BATCH, shuffle=True)
+    xs = np.reshape(xs, [-1, 28, 28, 1])
+    [c,li,o,lo,lo3,los,_,_,_,_,_,_] = sess.run([cost,input_real_pad,layerout_first,layerout6,layerout3,layerout_first_count,train_op_1,train_op_2,train_op_3,train_op_4,train_op_5,train_op_6], {input_real: xs, output_real: ys,lr: cal_lr(learning_rate, sess.run(global_step))})
     sess.run(step_inc_op)
+    saver.save(sess, os.getcwd() + '/save/save.ckpt')
     print(c)
-    p1.imshow(o[0,:,:,0])
-    p2.imshow(o[0, :, :, 5])
-    p3.imshow(o[0, :, :, 10])
-    p4.imshow(o[0, :, :, 9])
+    p1.imshow(o[0,:,:,10],norm=colors.Normalize(vmin=0.,vmax=1.))
+    p2.imshow(o[0, :, :, np.argmax(ys[0])],norm=colors.Normalize(vmin=0.,vmax=1.))
+    p3.imshow(li[0, :, :,0],norm=colors.Normalize(vmin=0.,vmax=1.))
+    p4.imshow(lo[0, :, :, 10])
+    p5.imshow(lo[0, :, :, np.argmax(ys[0])])
     fig.canvas.draw()
-    plt.pause(0.1)
+    fig.canvas.flush_events()
 

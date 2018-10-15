@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-MAX_SPIKE_TIME = 1e5
+MAX_SPIKE_TIME = 1e2
 
 class SNNLayer(object):
     """
@@ -12,7 +12,7 @@ class SNNLayer(object):
         self.out_size = out_size
         self.in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
-            [self.in_size, self.out_size], 30. / self.in_size, 70. / self.in_size, tf.float32))
+            [self.in_size, self.out_size], 1. / self.in_size, 20. / self.in_size, tf.float32))
 
     def forward(self,layer_in):
         batch_num = tf.shape(layer_in)[0]
@@ -139,10 +139,10 @@ class SCNN_upsample(object):
     def upsample(self, in_image, strides):
         in_size = tf.shape(in_image)
         img_reshaped = tf.reshape(in_image, [in_size[0], in_size[1], 1, in_size[2], 1, in_size[3]])
-        img_large1 = tf.concat((img_reshaped,MAX_SPIKE_TIME*tf.ones([in_size[0],in_size[1],1,in_size[2],strides-1,in_size[3]])),axis=4)
-        img_large2 = tf.concat((img_large1,MAX_SPIKE_TIME*tf.ones([in_size[0],in_size[1],strides-1,in_size[2],strides,in_size[3]])),axis=2)
-        #img_large = tf.tile(img_reshaped, [1, 1, strides, 1, strides, 1])
-        img_large_reshaped = tf.reshape(img_large2, [in_size[0], in_size[1] * strides, in_size[2] * strides, in_size[3]])
+        #img_large1 = tf.concat((img_reshaped,tf.ones([in_size[0],in_size[1],1,in_size[2],strides-1,in_size[3]])),axis=4)
+        #img_large2 = tf.concat((img_large1,tf.ones([in_size[0],in_size[1],strides-1,in_size[2],strides,in_size[3]])),axis=2)
+        img_large = tf.tile(img_reshaped, [1, 1, strides, 1, strides, 1])
+        img_large_reshaped = tf.reshape(img_large, [in_size[0], in_size[1] * strides, in_size[2] * strides, in_size[3]])
         return img_large_reshaped
 
     def forward(self, layer_in):
