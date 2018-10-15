@@ -10,9 +10,9 @@ import SNN_CORE
 
 K = 1e2
 K2 = 1e-3
-W1 = 1
-W2 = 1
-TRAINING_BATCH = 10
+W1 = 0.9
+W2 = 0.1
+TRAINING_BATCH = 1
 learning_rate = 1e-3
 
 mnist = MNIST_handle.MnistData()
@@ -21,6 +21,9 @@ lr = tf.placeholder(tf.float32)
 input_real = tf.placeholder(tf.float32)
 input_real_bin = tf.where(input_real>0.5,tf.ones_like(input_real),tf.zeros_like(input_real))
 output_real = tf.placeholder(tf.float32)
+
+global_step = tf.Variable(1, dtype=tf.int64)
+step_inc_op = tf.assign(global_step, global_step + 1)
 '''
 Here is a reshape, because TensorFlow DO NOT SUPPORT tf.extract_image_patches gradients operation for VARIABLE SIZE inputs
 '''
@@ -34,16 +37,16 @@ output_real_front = tf.concat((output_real_fig,tf.zeros([tf.shape(output_real_fi
 back_4d = tf.concat((zeros_4d,tf.ones([tf.shape(zeros_4d)[0],tf.shape(zeros_4d)[1],tf.shape(zeros_4d)[2],1])),axis=3)
 output_real_back = tf.multiply(input_real_invert,back_4d)
 
-layer1 = SNN_CORE.SCNN(kernel_size=3,in_channel=1,out_channel=8,strides=2)
-layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=8,out_channel=16,strides=2)
-layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=16,strides=2)
-layer4 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=16,out_channel=16,strides=2)
-layer5 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=16,out_channel=16,strides=2)
-layer6 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=16,out_channel=11,strides=2)
+layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=8,strides=2)
+layer2 = SNN_CORE.SCNN(kernel_size=5,in_channel=8,out_channel=16,strides=2)
+layer3 = SNN_CORE.SCNN(kernel_size=5,in_channel=16,out_channel=32,strides=2)
+layer4 = SNN_CORE.SCNN(kernel_size=5,in_channel=32,out_channel=64,strides=2)
+layer5 = SNN_CORE.SCNN_upsample(kernel_size=11,in_channel=64,out_channel=32,strides=4)
+layer6 = SNN_CORE.SCNN_upsample(kernel_size=11,in_channel=32,out_channel=11,strides=4)
 layerout3 = layer3.forward(layer2.forward(layer1.forward(input_exp)))
 layerout6 = layer6.forward(layer5.forward(layer4.forward(layerout3)))
 
-layerout_first = tf.where(tf.equal(tf.reduce_min(layerout6,axis=3,keepdims=True),layerout6),tf.ones_like(layerout6),tf.zeros_like(layerout6))
+layerout_first = tf.one_hot(tf.argmin(layerout6,axis=3),depth=11)
 
 both_front = tf.concat((layerout6,output_real_front),axis=3)
 both_back = tf.concat((layerout6,output_real_back),axis=3)
@@ -61,7 +64,7 @@ back_loss = tf.reduce_mean(tf.map_fn(loss_func_3d,both_back))
 wsc1,l21 = layer1.kernel.cost()
 wsc2,l22 = layer2.kernel.cost()
 wsc3,l23 = layer3.kernel.cost()
-wsc4,l24 = layer4.scnn.kernel.cost()
+wsc4,l24 = layer4.kernel.cost()
 wsc5,l25 = layer5.scnn.kernel.cost()
 wsc6,l26 = layer6.scnn.kernel.cost()
 
@@ -70,11 +73,49 @@ l2 = l21+l22+l23+l24+l25+l26
 
 cost = K*wsc + K2*l2 + W1*front_loss + W2*back_loss
 
-opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
-train_op = opt.minimize(cost)
+g_l1,g_l2,g_l3,g_l4,g_l5,g_l6 = tf.gradients(cost,[layer1.kernel.weight,layer2.kernel.weight,layer3.kernel.weight,layer4.kernel.weight,layer5.scnn.kernel.weight,layer6.scnn.kernel.weight])
+grad_sum_sqrt = tf.clip_by_value(
+    tf.sqrt(
+        tf.reduce_sum(
+            tf.square(
+                g_l1.values)) +
+        tf.reduce_sum(
+            tf.square(
+                g_l2.values)) +
+        tf.reduce_sum(
+            tf.square(
+                g_l3.values))+
+        tf.reduce_sum(
+            tf.square(
+                g_l4.values)) +
+        tf.reduce_sum(
+            tf.square(
+                g_l5.values)) +
+        tf.reduce_sum(
+            tf.square(
+                g_l6.values))
+    ),
+    1e-10,
+    10)
+g_l1_normed = tf.divide(g_l1.values, grad_sum_sqrt)
+g_l2_normed = tf.divide(g_l2.values, grad_sum_sqrt)
+g_l3_normed = tf.divide(g_l3.values, grad_sum_sqrt)
+g_l4_normed = tf.divide(g_l4.values, grad_sum_sqrt)
+g_l5_normed = tf.divide(g_l5.values, grad_sum_sqrt)
+g_l6_normed = tf.divide(g_l6.values, grad_sum_sqrt)
 
-
-
+train_op_1 = tf.scatter_add(
+    layer1.kernel.weight, g_l1.indices, -lr * g_l1_normed)
+train_op_2 = tf.scatter_add(
+    layer2.kernel.weight, g_l2.indices, -lr * g_l2_normed)
+train_op_3 = tf.scatter_add(
+    layer3.kernel.weight, g_l3.indices, -lr * g_l3_normed)
+train_op_4 = tf.scatter_add(
+    layer4.kernel.weight, g_l4.indices, -lr * g_l4_normed)
+train_op_5 = tf.scatter_add(
+    layer5.scnn.kernel.weight, g_l5.indices, -lr * g_l5_normed)
+train_op_6 = tf.scatter_add(
+    layer6.scnn.kernel.weight, g_l6.indices, -lr * g_l6_normed)
 
 config = tf.ConfigProto(
     device_count={'GPU': 0}
@@ -84,123 +125,11 @@ sess.run(tf.global_variables_initializer())
 
 plt.ion()
 fig = plt.figure()
-p = fig.add_subplot(111)
+p1 = fig.add_subplot(221)
+p2 = fig.add_subplot(222)
+p3 = fig.add_subplot(223)
+p4 = fig.add_subplot(224)
 
-xs, ys = mnist.next_batch(10)
-xs = np.reshape(xs, [-1, 28, 28, 1])
-
-while(True):
-
-    [c,o,_] = sess.run([front_loss,layerout_first,train_op], {input_real: xs, output_real: ys})
-    print(c)
-    p.imshow(o[0,:,:,10])
-    fig.canvas.draw()
-    plt.pause(0.1)
-
-xs,ys = mnist.next_batch(10)
-xs = np.reshape(xs,[-1,28,28,1])
-r_out = sess.run(front_loss,{input_real:xs,output_real:ys})
-print(r_out)
-l3 = sess.run(layerout3,{input_real:xs})
-print(np.shape(l3))
-out = sess.run(layerout6,{input_real:xs})
-print(np.shape(out))
-f1 = plt.subplot(221)
-f2 = plt.subplot(222)
-f3 = plt.subplot(223)
-f4 = plt.subplot(224)
-f1.imshow(r_out[0,:,:,10])
-f2.imshow(r_out[0,:,:,0])
-f3.imshow(l3[0,:,:,0])
-f4.imshow(l3[0,:,:,1])
-plt.show()
-exit(0)
-
-
-
-
-'''
-Define the Network
-'''
-layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=32,strides=2)
-layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=16,strides=2)
-#layer3 = SNN_CORE.SNNLayer(in_size=784,out_size=10)
-layer4 = SNN_CORE.SNNLayer(in_size=784,out_size=10)
-l1out = layer1.forward(input_exp)
-l2out = layer2.forward(l1out)
-#l3out = layer3.forward(tf.reshape(l2out,[-1,784]))
-l4out = layer4.forward(tf.reshape(l2out,[-1,784]))
-
-
-layer_real_output = tf.concat([l4out,output_real],1)
-output_loss = tf.reduce_mean(tf.map_fn(SNN_CORE.loss_func,layer_real_output))
-wsc1,l21 = layer1.kernel.cost()
-wsc2,l22 = layer2.kernel.cost()
-#wsc3,l23 = layer3.cost()
-wsc4,l24 = layer4.cost()
-WC = wsc1+wsc2+wsc4
-L2 = l21+l22+l24
-cost = K*WC + K2*L2 + output_loss
-
-global_step = tf.Variable(1, dtype=tf.int64)
-step_inc_op = tf.assign(global_step, global_step + 1)
-
-grad_l1, grad_l2, grad_l4 = tf.gradients(
-    cost, [layer1.kernel.weight, layer2.kernel.weight, layer4.weight], colocate_gradients_with_ops=True)
-grad_sum_sqrt = tf.clip_by_value(
-    tf.sqrt(
-        tf.reduce_sum(
-            tf.square(
-                grad_l1.values)) +
-        tf.reduce_sum(
-            tf.square(
-                grad_l2.values)) +
-        tf.reduce_sum(
-            tf.square(
-                grad_l4.values))
-    ),
-    1e-10,
-    10)
-grad_l1_normed = tf.divide(grad_l1.values, grad_sum_sqrt)
-grad_l2_normed = tf.divide(grad_l2.values, grad_sum_sqrt)
-#grad_l3_normed = tf.divide(grad_l3.values, grad_sum_sqrt)
-grad_l4_normed = tf.divide(grad_l4.values, grad_sum_sqrt)
-train_op_1 = tf.scatter_add(
-    layer1.kernel.weight, grad_l1.indices, -lr * grad_l1_normed)
-train_op_2 = tf.scatter_add(
-    layer2.kernel.weight, grad_l2.indices, -lr * grad_l2_normed)
-#train_op_3 = tf.scatter_add(
-#    layer3.weight, grad_l3.indices, -lr * grad_l3_normed)
-train_op_4 = tf.scatter_add(
-    layer4.weight, grad_l4.indices, -lr * grad_l4_normed)
-
-layer_output_pos = tf.argmin(l4out, 1)
-real_output_pos = tf.argmax(output_real, 1)
-accurate = tf.reduce_mean(
-    tf.where(
-        tf.equal(
-            layer_output_pos, real_output_pos), tf.ones_like(
-                layer_output_pos, dtype=tf.float32), tf.zeros_like(
-                    layer_output_pos, dtype=tf.float32)))
-
-
-
-config = tf.ConfigProto(
-    device_count={'GPU': 0}
-)
-config.gpu_options.allow_growth = True
-sess = tf.Session(config=config)
-sess.run(tf.global_variables_initializer())
-
-saver = tf.train.Saver()
-try:
-    saver.restore(sess, os.getcwd() + '/save/save.ckpt')
-    print('checkpoint loaded')
-except BaseException:
-    print('cannot load checkpoint')
-
-sess.graph.finalize()
-process = psutil.Process(os.getpid())
 
 def cal_lr(lr, step_num):
     bias = 1e-4
@@ -208,23 +137,17 @@ def cal_lr(lr, step_num):
 
 
 xs, ys = mnist.next_batch(TRAINING_BATCH)
-xs = xs.reshape(-1,28,28,1)
-print(sess.run(cost,{input_real: xs, output_real: ys}))
+xs = np.reshape(xs, [-1, 28, 28, 1])
 
-i = 1
-while(1):
-    xs, ys = mnist.next_batch(TRAINING_BATCH)
-    xs = xs.reshape(-1, 28, 28, 1)
-    [c,l,_, _, _] = sess.run([cost,output_loss,train_op_1, train_op_2, train_op_4], {
-                         input_real: xs, output_real: ys, lr: cal_lr(learning_rate, sess.run(global_step))})
+while(True):
+
+    [c,o,lo,_,_,_,_,_,_] = sess.run([cost,layerout_first,layerout6,train_op_1,train_op_2,train_op_3,train_op_4,train_op_5,train_op_6], {input_real: xs, output_real: ys,lr: cal_lr(learning_rate, sess.run(global_step))})
     sess.run(step_inc_op)
-    if i % 50 == 0:
-        tmpstr = repr(sess.run(global_step)) + ", " + repr(c) + ", "+repr(l)
-        with open(os.getcwd() + "/cost.txt", "a") as f:
-            f.write("\n" + tmpstr)
-        print(tmpstr)
-        saver.save(sess, os.getcwd() + '/save/save.ckpt')
-        mem = process.memory_percent()
-        if mem > 70:
-            exit(0)
-    i = i + 1
+    print(c)
+    p1.imshow(o[0,:,:,0])
+    p2.imshow(o[0, :, :, 5])
+    p3.imshow(o[0, :, :, 10])
+    p4.imshow(o[0, :, :, 9])
+    fig.canvas.draw()
+    plt.pause(0.1)
+

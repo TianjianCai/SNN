@@ -12,7 +12,7 @@ class SNNLayer(object):
         self.out_size = out_size
         self.in_size = in_size + 1
         self.weight = tf.Variable(tf.random_uniform(
-            [self.in_size, self.out_size], 10. / self.in_size, 20. / self.in_size, tf.float32))
+            [self.in_size, self.out_size], 30. / self.in_size, 70. / self.in_size, tf.float32))
 
     def forward(self,layer_in):
         batch_num = tf.shape(layer_in)[0]
