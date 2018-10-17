@@ -14,7 +14,7 @@ class SNNLayer(object):
         if w is None:
             self.weight = tf.Variable(tf.random_uniform([self.in_size, self.out_size], 1. / self.in_size, 48. / self.in_size, tf.float32))
         else:
-            self.weight = tf.Variable(w)
+            self.weight = tf.Variable(w,dtype=tf.float32)
 
     def forward(self,layer_in):
         batch_num = tf.shape(layer_in)[0]

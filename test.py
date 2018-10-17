@@ -1,5 +1,8 @@
 import tensorflow as tf
 import numpy as np
+import matplotlib.pyplot as plt
+
+
 import SNN_CORE
 
 layer_input = np.array([0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1,0.01],dtype=np.float32)
@@ -25,24 +28,18 @@ print(actual_out)
 
 # descrete solution
 
-timeline = np.zeros([1001])
+timeline = np.zeros([101])
 
-layer_input_descret = np.ceil(np.append(layer_input,1)*1000).astype(int)
+layer_input_descret = np.ceil(np.append(layer_input,0.)*100).astype(int)
 np.add.at(timeline,layer_input_descret,layer_weight)
 
-timeline_fft = np.fft.fft(timeline)
-
-linespace = np.arange(0,1.001,0.001)
+linespace = np.arange(0,1.01,0.01)
 exp_line = np.exp(-linespace)
 
-expline_fft = np.fft.fft(exp_line)
 
-mul_fft = expline_fft*timeline_fft
-
-conv_result = np.fft.ifft(mul_fft)
-
-integrate_result = np.cumsum(conv_result*0.001)
+conv_result = np.convolve(exp_line,timeline)
 
 
+integrate_result = np.cumsum(conv_result*0.01)
 
 print(np.argmax(integrate_result>1))
