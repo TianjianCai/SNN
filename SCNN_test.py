@@ -20,7 +20,7 @@ mnist = MNIST_handle.MnistData()
 
 lr = tf.placeholder(tf.float32)
 input_real = tf.placeholder(tf.float32)
-input_real_bin = tf.where(input_real>0.5,tf.ones_like(input_real),tf.zeros_like(input_real))
+input_real_bin = tf.where(input_real>0.5,tf.zeros_like(input_real),tf.ones_like(input_real))
 output_real = tf.placeholder(tf.float32)
 
 global_step = tf.Variable(1, dtype=tf.int64)
@@ -28,7 +28,7 @@ step_inc_op = tf.assign(global_step, global_step + 1)
 '''
 Here is a reshape, because TensorFlow DO NOT SUPPORT tf.extract_image_patches gradients operation for VARIABLE SIZE inputs
 '''
-input_real_pad = tf.pad(input_real_bin,tf.constant([[0,0],[2,2],[2,2],[0,0]]),"CONSTANT")
+input_real_pad = tf.pad(input_real_bin,tf.constant([[0,0],[2,2],[2,2],[0,0]]),"CONSTANT",constant_values=1)
 input_real_invert = tf.where(input_real_pad>0.5,tf.zeros_like(input_real_pad),tf.ones_like(input_real_pad))
 input_exp = tf.reshape(tf.exp(input_real_pad*1.79),[TRAINING_BATCH,32,32,1])
 output_real_4d = tf.reshape(output_real,[-1,1,1,10])
@@ -43,7 +43,7 @@ layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=32,strides=2)
 layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=64,strides=2)
 layer4 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=64,out_channel=32,strides=2)
 layer5 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=64,out_channel=32,strides=2)
-layer6 = SNN_CORE.SCNN_upsample(kernel_size=5,in_channel=48,out_channel=11,strides=2)
+layer6 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=48,out_channel=11,strides=2)
 layerout1 = layer1.forward(input_exp)
 layerout2 = layer2.forward(layerout1)
 layerout3 = layer3.forward(layerout2)

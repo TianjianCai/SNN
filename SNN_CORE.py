@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-MAX_SPIKE_TIME = 1e2
+MAX_SPIKE_TIME = 1e5
 
 class SNNLayer(object):
     """
@@ -8,11 +8,13 @@ class SNNLayer(object):
     self.out is the output of SNN layer, its' shape is [batch_size, out_size]
     self.weight is the weight of SNN layer, its' shape is [in_size, out_size]
     """
-    def __init__(self, in_size, out_size):
+    def __init__(self, in_size, out_size,w=None):
         self.out_size = out_size
         self.in_size = in_size + 1
-        self.weight = tf.Variable(tf.random_uniform(
-            [self.in_size, self.out_size], 1. / self.in_size, 20. / self.in_size, tf.float32))
+        if w is None:
+            self.weight = tf.Variable(tf.random_uniform([self.in_size, self.out_size], 1. / self.in_size, 48. / self.in_size, tf.float32))
+        else:
+            self.weight = tf.Variable(w)
 
     def forward(self,layer_in):
         batch_num = tf.shape(layer_in)[0]
