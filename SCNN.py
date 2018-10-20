@@ -14,7 +14,7 @@ K2 = 1e-3
 W1 = 0.9
 W2 = 0.1
 TRAINING_BATCH = 10
-learning_rate = 1e-4
+learning_rate = 1e-2
 
 mnist = MNIST_handle.MnistData()
 
@@ -39,11 +39,11 @@ back_4d = tf.concat((zeros_4d,tf.ones([tf.shape(zeros_4d)[0],tf.shape(zeros_4d)[
 output_real_back = tf.multiply(input_real_invert,back_4d)
 
 layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=16,strides=2)
-layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=32,strides=2)
-layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=64,strides=2)
-layer4 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=64,out_channel=32,strides=2)
-layer5 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=64,out_channel=32,strides=2)
-layer6 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=48,out_channel=11,strides=2)
+layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=16,strides=2)
+layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=32,strides=2)
+layer4 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=32,out_channel=16,strides=2)
+layer5 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=32,out_channel=16,strides=2)
+layer6 = SNN_CORE.SCNN_upsample(kernel_size=3,in_channel=32,out_channel=11,strides=2)
 layerout1 = layer1.forward(input_exp)
 layerout2 = layer2.forward(layerout1)
 layerout3 = layer3.forward(layerout2)
@@ -79,49 +79,8 @@ l2 = l21+l22+l23+l24+l25+l26
 
 cost = K*wsc + K2*l2 + W1*front_loss + W2*back_loss
 
-g_l1,g_l2,g_l3,g_l4,g_l5,g_l6 = tf.gradients(cost,[layer1.kernel.weight,layer2.kernel.weight,layer3.kernel.weight,layer4.scnn.kernel.weight,layer5.scnn.kernel.weight,layer6.scnn.kernel.weight])
-grad_sum_sqrt = tf.clip_by_value(
-    tf.sqrt(
-        tf.reduce_sum(
-            tf.square(
-                g_l1.values)) +
-        tf.reduce_sum(
-            tf.square(
-                g_l2.values)) +
-        tf.reduce_sum(
-            tf.square(
-                g_l3.values))+
-        tf.reduce_sum(
-            tf.square(
-                g_l4.values)) +
-        tf.reduce_sum(
-            tf.square(
-                g_l5.values)) +
-        tf.reduce_sum(
-            tf.square(
-                g_l6.values))
-    ),
-    1e-10,
-    10)
-g_l1_normed = tf.divide(g_l1.values, grad_sum_sqrt)
-g_l2_normed = tf.divide(g_l2.values, grad_sum_sqrt)
-g_l3_normed = tf.divide(g_l3.values, grad_sum_sqrt)
-g_l4_normed = tf.divide(g_l4.values, grad_sum_sqrt)
-g_l5_normed = tf.divide(g_l5.values, grad_sum_sqrt)
-g_l6_normed = tf.divide(g_l6.values, grad_sum_sqrt)
-
-train_op_1 = tf.scatter_add(
-    layer1.kernel.weight, g_l1.indices, -lr * g_l1_normed)
-train_op_2 = tf.scatter_add(
-    layer2.kernel.weight, g_l2.indices, -lr * g_l2_normed)
-train_op_3 = tf.scatter_add(
-    layer3.kernel.weight, g_l3.indices, -lr * g_l3_normed)
-train_op_4 = tf.scatter_add(
-    layer4.scnn.kernel.weight, g_l4.indices, -lr * g_l4_normed)
-train_op_5 = tf.scatter_add(
-    layer5.scnn.kernel.weight, g_l5.indices, -lr * g_l5_normed)
-train_op_6 = tf.scatter_add(
-    layer6.scnn.kernel.weight, g_l6.indices, -lr * g_l6_normed)
+opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+train_op = opt.minimize(cost)
 
 config = tf.ConfigProto(
     device_count={'GPU': 0}
@@ -142,12 +101,12 @@ try:
 except BaseException:
     print('cannot load checkpoint')
 
-
+xs, ys = mnist.next_batch(TRAINING_BATCH, shuffle=True)
+xs = np.reshape(xs, [-1, 28, 28, 1])
 
 while(True):
-    xs, ys = mnist.next_batch(TRAINING_BATCH, shuffle=True)
-    xs = np.reshape(xs, [-1, 28, 28, 1])
-    [c,fc,bc,li,o,lo,lo3,los,_,_,_,_,_,_] = sess.run([cost,front_loss,back_loss,input_real_pad,layerout_first,layerout6,layerout3,layerout_first_count,train_op_1,train_op_2,train_op_3,train_op_4,train_op_5,train_op_6], {input_real: xs, output_real: ys,lr: cal_lr(learning_rate, sess.run(global_step))})
+
+    [c,fc,bc,li,o,lo,lo3,los,_] = sess.run([cost,front_loss,back_loss,input_real_pad,layerout_first,layerout6,layerout3,layerout_first_count,train_op], {input_real: xs, output_real: ys,lr: cal_lr(learning_rate, sess.run(global_step))})
     step = sess.run(step_inc_op)
     saver.save(sess, os.getcwd() + '/save/save.ckpt')
     print(repr(step)+', '+repr(c)+', '+repr(fc)+', '+repr(bc))

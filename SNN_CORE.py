@@ -159,7 +159,9 @@ def w_sum_cost(W):
 
 
 def l2_func(W):
-    w_sqr = tf.square(W)
+    s = tf.shape(W)
+    W1 = tf.slice(W,[0,0],[s[0]-1,s[1]])
+    w_sqr = tf.square(W1)
     return tf.reduce_mean(w_sqr)
 
 
