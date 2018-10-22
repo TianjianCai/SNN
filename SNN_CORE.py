@@ -12,7 +12,7 @@ class SNNLayer(object):
         self.out_size = out_size
         self.in_size = in_size + 1
         if w is None:
-            self.weight = tf.Variable(tf.random_uniform([self.in_size, self.out_size], 1. / self.in_size, 48. / self.in_size, tf.float32))
+            self.weight = tf.Variable(tf.random_uniform([self.in_size, self.out_size], 0. / self.in_size, 48. / self.in_size, tf.float32))
         else:
             self.weight = tf.Variable(w,dtype=tf.float32)
 
@@ -60,12 +60,27 @@ class SNNLayer(object):
                 tf.concat((input_unique, [MAX_SPIKE_TIME]), 0), [1], [tf.shape(input_unique)[0]])
             return tf.gather(input_unique_left, input_unique_index)
 
+        def select_min(both):
+            def min_spike(spike_input):
+                spike = tf.slice(spike_input,[0],[self.in_size])
+                input = tf.slice(spike_input,[self.in_size],[self.in_size])
+                _,unique_index,_ = tf.unique_with_counts(input)
+                spike_min = tf.segment_min(spike,unique_index)
+                spike_out = tf.gather(spike_min,unique_index)
+                return spike_out
+            spike_input = tf.transpose(both)
+            return tf.map_fn(min_spike,spike_input)
+
+        output_spike_all_input = tf.concat((output_spike_all,input_sorted_outsize),axis=1)
+        output_spike_all_min = tf.reshape(tf.map_fn(select_min,output_spike_all_input),[batch_num,self.in_size,self.out_size])
+
         # input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
         #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
         input_sorted_outsize_left = tf.tile(
             tf.reshape(tf.map_fn(mov_left, input_sorted), [
                 batch_num, self.in_size, 1]), [
                 1, 1, self.out_size])
+        #input_sorted_outsize_left = tf.concat((tf.slice(input_sorted_outsize,[0,1,0],[batch_num,self.in_size-1,self.out_size]),tf.ones([batch_num,1,self.out_size])),axis=1)
         valid_cond_2 = tf.where(
             output_spike_all < input_sorted_outsize_left,
             tf.ones_like(input_sorted_outsize),

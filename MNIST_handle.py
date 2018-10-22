@@ -31,7 +31,6 @@ class MnistData(object):
             index = np.random.randint(self.datasize, size=batch_size)
             xs = self.xs_full[index, :]
             ys = self.ys_full[index, :]
-            del index
             return xs, ys
         else:
             if self.pointer + batch_size < self.datasize:
