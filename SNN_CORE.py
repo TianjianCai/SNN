@@ -1,6 +1,64 @@
 import tensorflow as tf
 
-MAX_SPIKE_TIME = 1e5
+MAX_SPIKE_TIME = 1e3
+
+class SNNLayer_new(object):
+    """
+    This class draw the graph of a SNN layer
+    self.out is the output of SNN layer, its' shape is [batch_size, out_size]
+    self.weight is the weight of SNN layer, its' shape is [in_size, out_size]
+    """
+    def __init__(self, in_size, out_size,w=None):
+        self.out_size = out_size
+        self.in_size = in_size + 1
+        if w is None:
+            self.weight = tf.Variable(tf.concat((tf.random_uniform([self.in_size - 1, self.out_size], -1. / self.in_size, 1. / self.in_size, tf.float32),tf.zeros([1,self.out_size])),axis=0))
+        else:
+            self.weight = tf.Variable(w,dtype=tf.float32)
+
+    def forward(self,layer_in):
+        batch_num = tf.shape(layer_in)[0]
+        bias_layer_in = tf.ones([batch_num, 1])
+        layer_in = tf.concat([layer_in, bias_layer_in], 1)
+        _, input_sorted_indices = tf.nn.top_k(-layer_in, self.in_size, False)
+        map_x = tf.reshape(
+            tf.tile(
+                tf.reshape(
+                    tf.range(
+                        start=0, limit=batch_num, delta=1), [
+                        batch_num, 1]), [
+                    1, self.in_size]), [
+                batch_num, self.in_size, 1])
+        input_sorted_map = tf.concat(
+            [map_x, tf.reshape(input_sorted_indices, [batch_num, self.in_size, 1])], 2)
+        input_sorted = tf.gather_nd(params=layer_in, indices=input_sorted_map)
+        input_sorted_outsize = tf.tile(
+            tf.reshape(
+                input_sorted, [
+                    batch_num, self.in_size, 1]), [
+                1, 1, self.out_size])
+        weight_sorted = tf.map_fn(
+            lambda x: tf.gather(
+                self.weight, tf.cast(
+                    x, tf.int32)), tf.cast(
+                input_sorted_indices, tf.float32))
+        weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)
+        weight_sumed = tf.cumsum(weight_sorted, axis=1)
+        weight_input_sumed = tf.cumsum(weight_input_mul, axis=1)
+        out_spike_all = tf.divide(1+weight_input_sumed,tf.clip_by_value(weight_sumed,1e-10,1e10))
+        out_spike_large = tf.where(out_spike_all<input_sorted_outsize,MAX_SPIKE_TIME*tf.ones_like(out_spike_all),out_spike_all)
+        def mov_left(input):
+            input_unique, input_unique_index, _ = tf.unique_with_counts(input)
+            input_unique_left = tf.slice(
+                tf.concat((input_unique, [1e10]), 0), [1], [tf.shape(input_unique)[0]])
+            return tf.gather(input_unique_left, input_unique_index)
+        input_sorted_outsize_left = tf.tile(
+            tf.reshape(tf.map_fn(mov_left, input_sorted), [
+                batch_num, self.in_size, 1]), [
+                1, 1, self.out_size])
+        out_spike_valid = tf.where(out_spike_large>input_sorted_outsize_left,MAX_SPIKE_TIME*tf.ones_like(out_spike_large),out_spike_large)
+        out_spike = tf.reduce_min(out_spike_valid,axis=1)
+        return out_spike
 
 class SNNLayer(object):
     """
@@ -127,7 +185,7 @@ class SCNN(object):
         self.in_channel = in_channel
         self.out_channel = out_channel
         self.strides = strides
-        self.kernel = SNNLayer(in_size=self.kernel_size * self.kernel_size * self.in_channel,
+        self.kernel = SNNLayer_new(in_size=self.kernel_size * self.kernel_size * self.in_channel,
                                         out_size=self.out_channel)
 
     def forward(self, layer_in):
@@ -137,7 +195,7 @@ class SCNN(object):
                                            padding="SAME")
         patches_flatten = tf.reshape(patches,
                                      [input_size[0], -1, self.in_channel * self.kernel_size * self.kernel_size])
-        patches_infpad = tf.where(tf.less(patches_flatten, 0.9),
+        patches_infpad = tf.where(tf.less(patches_flatten, 0.1),
                                   MAX_SPIKE_TIME * tf.ones_like(patches_flatten), patches_flatten)
         img_raw = tf.map_fn(self.kernel.forward, patches_infpad)
         img_reshaped = tf.reshape(img_raw, [input_size[0], tf.cast(tf.math.ceil(input_size[1] / self.strides),tf.int32), tf.cast(tf.math.ceil(input_size[2] / self.strides),tf.int32),
@@ -168,7 +226,8 @@ class SCNN_upsample(object):
 
 
 def w_sum_cost(W):
-    part1 = tf.subtract(1., tf.reduce_sum(W, 0))
+    threshold = 1.
+    part1 = tf.subtract(threshold, tf.reduce_sum(W, 0))
     part2 = tf.where(part1 > 0, part1, tf.zeros_like(part1))
     return tf.reduce_mean(part2)
 
@@ -176,7 +235,7 @@ def w_sum_cost(W):
 def l2_func(W):
     s = tf.shape(W)
     W1 = tf.slice(W,[0,0],[s[0]-1,s[1]])
-    w_sqr = tf.square(W1)
+    w_sqr = tf.square(W)
     return tf.reduce_mean(w_sqr)
 
 

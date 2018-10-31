@@ -8,12 +8,9 @@ import psutil
 import MNIST_handle
 import SNN_CORE
 
-
-K = 1e2
-K2 = 1e-3
-W1 = 0.5
-W2 = 0.5
-TRAINING_BATCH = 10
+K = 100
+K2 = 1e-2
+TRAINING_BATCH = 30
 learning_rate = 1e-3
 
 mnist = MNIST_handle.MnistData()
@@ -28,72 +25,114 @@ step_inc_op = tf.assign(global_step, global_step + 1)
 '''
 Here is a reshape, because TensorFlow DO NOT SUPPORT tf.extract_image_patches gradients operation for VARIABLE SIZE inputs
 '''
-input_real_pad = tf.pad(input_real_bin,tf.constant([[0,0],[2,2],[2,2],[0,0]]),"CONSTANT",constant_values=1)
-input_real_invert = tf.where(input_real_pad>0.5,tf.zeros_like(input_real_pad),tf.ones_like(input_real_pad))
-input_real_inc = tf.add(input_real_pad,tf.tile(tf.reshape(tf.linspace(0.,0.3,num=32*32),[1,32,32,1]),[TRAINING_BATCH,1,1,1]))
-input_exp = tf.reshape(tf.exp(input_real_inc*1.79),[TRAINING_BATCH,32,32,1])
-output_real_4d = tf.reshape(output_real,[-1,1,1,10])
-zeros_4d = tf.zeros_like(output_real_4d)
-output_real_fig = tf.multiply(input_real_pad,output_real_4d)
-output_real_front = tf.concat((output_real_fig,tf.zeros([tf.shape(output_real_fig)[0],tf.shape(output_real_fig)[1],tf.shape(output_real_fig)[2],1])),axis=3)
-back_4d = tf.concat((zeros_4d,tf.ones([tf.shape(zeros_4d)[0],tf.shape(zeros_4d)[1],tf.shape(zeros_4d)[2],1])),axis=3)
-output_real_back = tf.multiply(input_real_invert,back_4d)
+input_real_resize = tf.reshape(1+5*input_real_bin,[TRAINING_BATCH,28,28,1])
 
-layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=16,strides=2)
-layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=32,strides=2)
-layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=64,strides=2)
-layer4 = SNN_CORE.SCNN(kernel_size=3,in_channel=64,out_channel=64,strides=2)
-layer5 = SNN_CORE.SCNN(kernel_size=3,in_channel=64,out_channel=10,strides=2)
-layer6 = SNN_CORE.SCNN(kernel_size=1,in_channel=11,out_channel=11,strides=1)
-layerout1 = layer1.forward(input_exp)
+layer1 = SNN_CORE.SCNN(kernel_size=3,in_channel=1,out_channel=20,strides=2)
+layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=20,out_channel=20,strides=2)
+layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=20,out_channel=40,strides=2)
+layer4 = SNN_CORE.SCNN(kernel_size=3,in_channel=40,out_channel=32,strides=2)
+layer5 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=10,strides=2)
+layerout1 = layer1.forward(input_real_resize)
 layerout2 = layer2.forward(layerout1)
 layerout3 = layer3.forward(layerout2)
 layerout4 = layer4.forward(layerout3)
-layerout5 = layer5.forward(layerout4)
-layerout5_concat = tf.concat((input_exp,tf.tile(layerout5,[1,32,32,1])),axis=3)
-layerout6 = layer6.forward(layerout5_concat)
+layerout5 = tf.reshape(layer5.forward(layerout4),[-1,10])
 
-layerout_first = tf.one_hot(tf.argmin(layerout6,axis=3),depth=11)
-layerout_first_count = tf.reduce_sum(layerout_first)
+wsc1 = SNN_CORE.w_sum_cost(layer1.kernel.weight)
+wsc2 = SNN_CORE.w_sum_cost(layer2.kernel.weight)
+wsc3 = SNN_CORE.w_sum_cost(layer3.kernel.weight)
+wsc4 = SNN_CORE.w_sum_cost(layer4.kernel.weight)
+wsc5 = SNN_CORE.w_sum_cost(layer5.kernel.weight)
 
-both_front = tf.concat((layerout6,output_real_front),axis=3)
-both_back = tf.concat((layerout6,output_real_back),axis=3)
+wsc = wsc1 + wsc2 + wsc3 + wsc4 + wsc5
 
-def loss_func_3d(both):
-    output,groundtruth = tf.split(both,[11,11],axis=2)
-    z1 = tf.reduce_sum(tf.multiply(tf.exp(tf.subtract(0.,output)),groundtruth),2,keepdims=True)
-    z2 = tf.reduce_sum(tf.exp(tf.subtract(0.,output)),2,keepdims=True)
-    loss = tf.subtract(0.,tf.log(tf.clip_by_value(tf.divide(z1,tf.clip_by_value(z2,1e-10,1e10)),1e-10,1)))
-    return tf.reduce_mean(loss)
+l21 = SNN_CORE.l2_func(layer1.kernel.weight)
+l22 = SNN_CORE.l2_func(layer2.kernel.weight)
+l23 = SNN_CORE.l2_func(layer3.kernel.weight)
+l24 = SNN_CORE.l2_func(layer4.kernel.weight)
+l25 = SNN_CORE.l2_func(layer5.kernel.weight)
 
-front_loss = tf.reduce_mean(tf.map_fn(loss_func_3d,both_front))
-back_loss = tf.reduce_mean(tf.map_fn(loss_func_3d,both_back))
 
-wsc1,l21 = layer1.kernel.cost()
-wsc2,l22 = layer2.kernel.cost()
-wsc3,l23 = layer3.kernel.cost()
-wsc4,l24 = layer4.kernel.cost()
-wsc5,l25 = layer5.kernel.cost()
-wsc6,l26 = layer6.kernel.cost()
+l2 = l21+l22+l23+l24+l25
 
-wsc = wsc1+wsc2+wsc3+wsc4+wsc5+wsc6
-l2 = l21+l22+l23+l24+l25+l26
+def loss_func(both):
+    """
+    function to calculate loss, refer to paper p.7, formula 11
+    :param both: a tensor, it put both layer output and expected output together, its' shape
+            is [batch_size,out_size*2], where the left part is layer output(real output), right part is
+            the label of input(expected output), the tensor both should be looked like this:
+            [[2.13,3.56,7.33,3.97,...0,0,1,0,...]
+             [3.14,5.56,2.54,15.6,...0,0,0,1,...]...]
+                ↑                   ↑
+             layer output           label of input
+    :return: a tensor, it is a scalar of loss
+    """
+    output = tf.slice(both, [0], [tf.cast(tf.shape(both)[0] / 2, tf.int32)])
+    index = tf.slice(both, [tf.cast(tf.shape(both)[0] / 2, tf.int32)],
+                     [tf.cast(tf.shape(both)[0] / 2, tf.int32)])
+    z1 = tf.exp(tf.subtract(0., tf.reduce_sum(tf.multiply(output, index))))
+    z2 = tf.reduce_sum(tf.exp(tf.subtract(0., output)))
+    loss = tf.subtract(
+        0., tf.log(
+            tf.clip_by_value(tf.divide(
+                z1, tf.clip_by_value(
+                    z2, 1e-10, 1e10)), 1e-10, 1)))
+    return loss
 
-cost = K*wsc + K2*l2 + W1*front_loss + W2*back_loss
+layer_real_output = tf.concat([layerout5, output_real], 1)
+output_loss = tf.reduce_mean(tf.map_fn(loss_func, layer_real_output))
+
+cost = K*wsc + K2*l2 + output_loss
 
 opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
 train_op = opt.minimize(cost)
+
+grad_l1, grad_l2, grad_l3, grad_l4, grad_l5 = tf.gradients(
+    cost, [layer1.kernel.weight, layer2.kernel.weight, layer3.kernel.weight, layer4.kernel.weight, layer5.kernel.weight], colocate_gradients_with_ops=True)
+
+grad_sum_sqrt = tf.clip_by_value(
+    tf.sqrt(
+        tf.reduce_sum(
+            tf.square(
+                grad_l1.values)) +
+        tf.reduce_sum(
+            tf.square(
+                grad_l2.values)) +
+        tf.reduce_sum(
+            tf.square(
+                grad_l3.values)) +
+        tf.reduce_sum(
+            tf.square(
+                grad_l4.values)) +
+        tf.reduce_sum(
+            tf.square(
+                grad_l5.values))),
+    0,
+    1)
+grad_l1_normed = tf.divide(grad_l1.values, grad_sum_sqrt)
+grad_l2_normed = tf.divide(grad_l2.values, grad_sum_sqrt)
+grad_l3_normed = tf.divide(grad_l3.values, grad_sum_sqrt)
+grad_l4_normed = tf.divide(grad_l4.values, grad_sum_sqrt)
+grad_l5_normed = tf.divide(grad_l5.values, grad_sum_sqrt)
+
+train_op_1 = tf.scatter_add(
+    layer1.kernel.weight, grad_l1.indices, -lr * grad_l1_normed)
+train_op_2 = tf.scatter_add(
+    layer2.kernel.weight, grad_l2.indices, -lr * grad_l2_normed)
+train_op_3 = tf.scatter_add(
+    layer3.kernel.weight, grad_l3.indices, -lr * grad_l3_normed)
+train_op_4 = tf.scatter_add(
+    layer4.kernel.weight, grad_l4.indices, -lr * grad_l4_normed)
+train_op_5 = tf.scatter_add(
+    layer5.kernel.weight, grad_l5.indices, -lr * grad_l5_normed)
+
+
 
 config = tf.ConfigProto(
     device_count={'GPU': 0}
 )
 sess = tf.Session(config=config)
 sess.run(tf.global_variables_initializer())
-
-
-def cal_lr(lr, step_num):
-    bias = 1e-4
-    return (lr * np.exp(step_num * -1e-5)) + bias
 
 
 saver = tf.train.Saver()
@@ -103,17 +142,22 @@ try:
 except BaseException:
     print('cannot load checkpoint')
 
-xs, ys = mnist.next_batch(TRAINING_BATCH, shuffle=False)
-xs = np.reshape(xs, [-1, 28, 28, 1])
-
 print("training started")
 
-while(True):
 
-    [c,fc,bc,li,o,lo,lo3,los,_] = sess.run([cost,front_loss,back_loss,input_exp,layerout_first,layerout6,layerout3,layerout_first_count,train_op], {input_real: xs, output_real: ys,lr: cal_lr(learning_rate, sess.run(global_step))})
+
+while(True):
+    xs, ys = mnist.next_batch(TRAINING_BATCH, shuffle=False)
+    xs = np.reshape(xs, [-1, 28, 28, 1])
+    [c,l,lo,lo1,_] = sess.run([cost,output_loss,layerout5,layerout4,train_op], {input_real: xs, output_real: ys, lr:learning_rate})
     step = sess.run(step_inc_op)
-    if step % 5 == 0:
+    if step % 10 == 0:
         saver.save(sess, os.getcwd() + '/save/save.ckpt')
-        print(repr(step)+', '+repr(c)+', '+repr(fc)+', '+repr(bc))
+        print(repr(step)+', '+repr(c)+', '+repr(l) + '\n'+repr(lo[0,:])+'\n'+repr(ys[0,:]))
+    '''
+        plt.imshow(lo1[0,:,:,0])
+        plt.show()
+    '''
+
 
 
