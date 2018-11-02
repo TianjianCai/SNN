@@ -1,6 +1,7 @@
 import tensorflow as tf
 
 MAX_SPIKE_TIME = 1e3
+WTA_latency = 1e-3
 
 class SNNLayer_new(object):
     """
@@ -8,11 +9,12 @@ class SNNLayer_new(object):
     self.out is the output of SNN layer, its' shape is [batch_size, out_size]
     self.weight is the weight of SNN layer, its' shape is [in_size, out_size]
     """
-    def __init__(self, in_size, out_size,w=None):
+    def __init__(self, in_size, out_size,w=None,wta=True):
+        self.wta = wta
         self.out_size = out_size
         self.in_size = in_size + 1
         if w is None:
-            self.weight = tf.Variable(tf.concat((tf.random_uniform([self.in_size - 1, self.out_size], -1. / self.in_size, 1. / self.in_size, tf.float32),tf.zeros([1,self.out_size])),axis=0))
+            self.weight = tf.Variable(tf.concat((tf.random_uniform([self.in_size - 1, self.out_size], 0. / self.in_size, 32. / self.in_size, tf.float32),tf.zeros([1,self.out_size])),axis=0))
         else:
             self.weight = tf.Variable(w,dtype=tf.float32)
 
@@ -39,7 +41,7 @@ class SNNLayer_new(object):
                 1, 1, self.out_size])
         weight_sorted = tf.map_fn(
             lambda x: tf.gather(
-                self.weight, tf.cast(
+                tf.abs(self.weight), tf.cast(
                     x, tf.int32)), tf.cast(
                 input_sorted_indices, tf.float32))
         weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)
@@ -58,7 +60,11 @@ class SNNLayer_new(object):
                 1, 1, self.out_size])
         out_spike_valid = tf.where(out_spike_large>input_sorted_outsize_left,MAX_SPIKE_TIME*tf.ones_like(out_spike_large),out_spike_large)
         out_spike = tf.reduce_min(out_spike_valid,axis=1)
-        return out_spike
+        out_spike_wta = tf.where(out_spike<tf.reduce_min(out_spike,axis=1,keepdims=True)+WTA_latency,out_spike,MAX_SPIKE_TIME*tf.ones_like(out_spike))
+        if self.wta:
+            return out_spike_wta
+        else:
+            return out_spike
 
 class SNNLayer(object):
     """
@@ -180,13 +186,13 @@ class SNNLayer(object):
 
 
 class SCNN(object):
-    def __init__(self, kernel_size=3, in_channel=1, out_channel=1, strides=1):
+    def __init__(self, kernel_size=3, in_channel=1, out_channel=1, strides=1,wta=True):
         self.kernel_size = kernel_size
         self.in_channel = in_channel
         self.out_channel = out_channel
         self.strides = strides
         self.kernel = SNNLayer_new(in_size=self.kernel_size * self.kernel_size * self.in_channel,
-                                        out_size=self.out_channel)
+                                        out_size=self.out_channel,wta=wta)
 
     def forward(self, layer_in):
         input_size = tf.shape(layer_in)
@@ -202,6 +208,19 @@ class SCNN(object):
                                             self.out_channel])
         return img_reshaped
 
+class POOLING(object):
+    def __init__(self,size=2):
+        self.size = size
+
+    def forward(self, layer_in):
+        input_size = tf.shape(layer_in)
+        patches = tf.extract_image_patches(images=layer_in, ksizes=[1,self.size,self.size,1],strides=[1,self.size,self.size,1],rates=[1,1,1,1],padding="SAME")
+        patches_flatten = tf.reshape(patches,[input_size[0],tf.cast(tf.math.ceil(input_size[1] / self.size),tf.int32),tf.cast(tf.math.ceil(input_size[2] / self.size),tf.int32),self.size*self.size,input_size[3]])
+        patches_infpad = tf.where(tf.less(patches_flatten, 0.1),
+                                  MAX_SPIKE_TIME * tf.ones_like(patches_flatten), patches_flatten)
+        patches_trans = tf.transpose(patches_infpad, perm=[0,1,2,4,3])
+        patches_min = tf.reduce_min(patches_trans,axis=4)
+        return patches_min
 
 class SCNN_upsample(object):
     def __init__(self, kernel_size=3, in_channel=1, out_channel=1, strides=1):
