@@ -14,7 +14,7 @@ class SNNLayer_new(object):
         self.out_size = out_size
         self.in_size = in_size + 1
         if w is None:
-            self.weight = tf.Variable(tf.concat((tf.random_uniform([self.in_size - 1, self.out_size], 0. / self.in_size, 32. / self.in_size, tf.float32),tf.zeros([1,self.out_size])),axis=0))
+            self.weight = tf.Variable(tf.concat((tf.random_uniform([self.in_size - 1, self.out_size], 0. / self.in_size, 8. / self.in_size, tf.float32),tf.zeros([1,self.out_size])),axis=0))
         else:
             self.weight = tf.Variable(w,dtype=tf.float32)
 
@@ -41,7 +41,7 @@ class SNNLayer_new(object):
                 1, 1, self.out_size])
         weight_sorted = tf.map_fn(
             lambda x: tf.gather(
-                tf.abs(self.weight), tf.cast(
+                self.weight, tf.cast(
                     x, tf.int32)), tf.cast(
                 input_sorted_indices, tf.float32))
         weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)

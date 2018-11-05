@@ -10,7 +10,7 @@ import SNN_CORE
 
 K = 100
 K2 = 1e-2
-TRAINING_BATCH = 30
+TRAINING_BATCH = 10
 learning_rate = 1e-3
 
 mnist = MNIST_handle.MnistData()
@@ -30,8 +30,8 @@ input_real_resize = tf.reshape(1+5*input_real_bin,[TRAINING_BATCH,28,28,1])
 pool2 = SNN_CORE.POOLING(2)
 pool7 = SNN_CORE.POOLING(7)
 
-layer1 = SNN_CORE.SCNN(kernel_size=3,in_channel=1,out_channel=16,strides=2,wta=False)
-layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=16,out_channel=32,strides=2,wta=False)
+layer1 = SNN_CORE.SCNN(kernel_size=5,in_channel=1,out_channel=32,strides=2,wta=False)
+layer2 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=32,strides=2,wta=False)
 layer3 = SNN_CORE.SCNN(kernel_size=3,in_channel=32,out_channel=64,strides=2,wta=False)
 layer4 = SNN_CORE.SCNN(kernel_size=3,in_channel=64,out_channel=64,strides=2,wta=False)
 layer5 = SNN_CORE.SCNN(kernel_size=3,in_channel=64,out_channel=10,strides=2,wta=False)
