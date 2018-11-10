@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-MAX_SPIKE_TIME = 1e3
+MAX_SPIKE_TIME = 1e4
 WTA_latency = 1e-3
 
 class SNNLayer_new(object):
@@ -112,11 +112,6 @@ class SNNLayer(object):
         output_spike_all = tf.divide(
             weight_input_sumed, tf.clip_by_value(tf.subtract(
                 weight_sumed, 1.), 1e-10, 1e10))
-        self.outspikeall = output_spike_all
-        valid_cond_1 = tf.where(
-            weight_sumed > 1,
-            tf.ones_like(weight_sumed),
-            tf.zeros_like(weight_sumed))
 
         def mov_left(input):
             input_unique, input_unique_index, _ = tf.unique_with_counts(input)
@@ -124,66 +119,92 @@ class SNNLayer(object):
                 tf.concat((input_unique, [MAX_SPIKE_TIME]), 0), [1], [tf.shape(input_unique)[0]])
             return tf.gather(input_unique_left, input_unique_index)
 
-        def select_min(both):
-            def min_spike(spike_input):
-                spike = tf.slice(spike_input,[0],[self.in_size])
-                input = tf.slice(spike_input,[self.in_size],[self.in_size])
-                _,unique_index,_ = tf.unique_with_counts(input)
-                spike_min = tf.segment_min(spike,unique_index)
-                spike_out = tf.gather(spike_min,unique_index)
-                return spike_out
-            spike_input = tf.transpose(both)
-            return tf.map_fn(min_spike,spike_input)
-
-        output_spike_all_input = tf.concat((output_spike_all,input_sorted_outsize),axis=1)
-        output_spike_all_min = tf.reshape(tf.map_fn(select_min,output_spike_all_input),[batch_num,self.in_size,self.out_size])
-
-        # input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
-        #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
         input_sorted_outsize_left = tf.tile(
             tf.reshape(tf.map_fn(mov_left, input_sorted), [
                 batch_num, self.in_size, 1]), [
                 1, 1, self.out_size])
-        #input_sorted_outsize_left = tf.concat((tf.slice(input_sorted_outsize,[0,1,0],[batch_num,self.in_size-1,self.out_size]),tf.ones([batch_num,1,self.out_size])),axis=1)
-        valid_cond_2 = tf.where(
-            output_spike_all < input_sorted_outsize_left,
-            tf.ones_like(input_sorted_outsize),
-            tf.zeros_like(input_sorted_outsize))
-        valid_cond_both = tf.where(
-            tf.equal(
-                valid_cond_1 +
-                valid_cond_2,
-                2),
-            tf.ones_like(valid_cond_1),
-            tf.zeros_like(valid_cond_1))
-        valid_cond_both_extend = tf.concat(
-            [valid_cond_both, tf.ones([batch_num, 1, self.out_size])], 1)
-        output_spike_all_extent = tf.concat(
-            [output_spike_all, MAX_SPIKE_TIME * tf.ones([batch_num, 1, self.out_size])], 1)
-        output_valid_both = tf.concat(
-            [output_spike_all_extent, valid_cond_both_extend], 1)
 
-        def select_output(both):
-            value = tf.transpose(
-                tf.slice(
-                    both, [
-                        0, 0], [
-                        self.in_size + 1, self.out_size]))
-            valid = tf.transpose(
-                tf.slice(both, [self.in_size + 1, 0], [self.in_size + 1, self.out_size]))
-            pos = tf.cast(tf.where(tf.equal(valid, 1)), tf.int32)
-            pos_reduced = tf.concat([tf.reshape(tf.range(0, self.out_size), [self.out_size, 1]), tf.reshape(
-                tf.segment_min(pos[:, 1], pos[:, 0]), [self.out_size, 1])], 1)
-            return tf.gather_nd(value, pos_reduced)
+        output_spike_large = tf.where(output_spike_all<input_sorted_outsize,MAX_SPIKE_TIME*tf.ones_like(output_spike_all),output_spike_all)
+        output_spike_valid = tf.where(output_spike_large > input_sorted_outsize_left,
+                                   MAX_SPIKE_TIME * tf.ones_like(output_spike_large), output_spike_large)
+        output_spike = tf.reduce_min(output_spike_valid,axis=1)
+        return output_spike
 
-        layer_out = tf.map_fn(select_output, output_valid_both)
-        return layer_out
+class SNNLayer_Multi(object):
+    def __init__(self, in_size, out_size, in_spike=1, out_spike=1,w=None,b=None):
+        self.out_size = out_size
+        self.in_size = in_size * in_spike + 1
+        self.in_spike = in_spike
+        self.out_spike = out_spike
+        if w is None:
+            self.weight_core = tf.Variable(tf.random_uniform([in_size, self.out_size], 0. / self.in_size, 48. / self.in_size, tf.float32))
+        else:
+            self.weight_core = tf.Variable(w,dtype=tf.float32)
 
-    def cost(self):
-        wsc = w_sum_cost(self.weight)
-        l2 = l2_func(self.weight)
-        return wsc,l2
+        self.weight = tf.tile(self.weight_core,[in_spike,1])
 
+        if b is None:
+            self.weight = tf.concat((self.weight,tf.zeros([1,self.out_size])),axis=0)
+        else:
+            self.weight = tf.concat((self.weight,tf.reshape(b,[1,self.out_size])),axis=0)
+
+    def forward(self,layer_in):
+        batch_num = tf.shape(layer_in)[0]
+        bias_layer_in = tf.ones([batch_num, 1])
+        layer_in = tf.transpose(layer_in, [0,2,1])
+        layer_in = tf.reshape(layer_in, [batch_num,-1])
+        layer_in = tf.concat([layer_in, bias_layer_in], 1)
+        _, input_sorted_indices = tf.nn.top_k(-layer_in, self.in_size, False)
+        map_x = tf.reshape(
+            tf.tile(
+                tf.reshape(
+                    tf.range(
+                        start=0, limit=batch_num, delta=1), [
+                        batch_num, 1]), [
+                    1, self.in_size]), [
+                batch_num, self.in_size, 1])
+        input_sorted_map = tf.concat(
+            [map_x, tf.reshape(input_sorted_indices, [batch_num, self.in_size, 1])], 2)
+        input_sorted = tf.gather_nd(params=layer_in, indices=input_sorted_map)
+        input_sorted_outsize = tf.tile(
+            tf.reshape(
+                input_sorted, [
+                    batch_num, self.in_size, 1]), [
+                1, 1, self.out_size])
+        input_sorted_outsize_outspike = tf.reshape(tf.tile(tf.reshape(input_sorted_outsize,[batch_num,1,self.in_size,self.out_size]),[1,self.out_spike,1,1]),[batch_num*self.out_spike,self.in_size,self.out_size])
+
+        weight_sorted = tf.map_fn(
+            lambda x: tf.gather(
+                self.weight, tf.cast(
+                    x, tf.int32)), tf.cast(
+                input_sorted_indices, tf.float32))
+        weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)
+        weight_sumed = tf.cumsum(weight_sorted, axis=1)
+        weight_sumed_outspike = tf.reshape(tf.tile(tf.reshape(weight_sumed,[batch_num,1,self.in_size,self.out_size]),[1,self.out_spike,1,1]),[batch_num*self.out_spike,self.in_size,self.out_size])
+        weight_input_sumed = tf.cumsum(weight_input_mul, axis=1)
+        weight_input_sumed_outspike = tf.reshape(tf.tile(tf.reshape(weight_input_sumed,[batch_num,1,self.in_size,self.out_size]),[1,self.out_spike,1,1]),[batch_num*self.out_spike,self.in_size,self.out_size])
+        threshold = tf.reshape(tf.tile(tf.range(1.,self.out_spike+1,1.),[batch_num]),[-1,1,1])
+        output_spike_all = tf.divide(
+            weight_input_sumed_outspike, tf.clip_by_value(tf.subtract(
+                weight_sumed_outspike, threshold), 1e-10, 1e10))
+
+        def mov_left(input):
+            input_unique, input_unique_index, _ = tf.unique_with_counts(input)
+            input_unique_left = tf.slice(
+                tf.concat((input_unique, [MAX_SPIKE_TIME]), 0), [1], [tf.shape(input_unique)[0]])
+            return tf.gather(input_unique_left, input_unique_index)
+
+        input_sorted_outsize_left = tf.reshape(tf.tile(
+            tf.reshape(tf.map_fn(mov_left, input_sorted), [
+                batch_num, 1, self.in_size, 1]), [
+                1, self.out_spike, 1, self.out_size]),[batch_num*self.out_spike,self.in_size,self.out_size])
+
+        output_spike_large = tf.where(output_spike_all<input_sorted_outsize_outspike,MAX_SPIKE_TIME*tf.ones_like(output_spike_all),output_spike_all)
+        output_spike_valid = tf.where(output_spike_large > input_sorted_outsize_left,
+                                   MAX_SPIKE_TIME * tf.ones_like(output_spike_large), output_spike_large)
+        output_spike = tf.reduce_min(output_spike_valid,axis=1)
+        output_spike_reshaped = tf.transpose(tf.reshape(output_spike,[batch_num,self.out_spike,self.out_size]),[0,2,1])
+        return output_spike_reshaped
 
 class SCNN(object):
     def __init__(self, kernel_size=3, in_channel=1, out_channel=1, strides=1,wta=True):

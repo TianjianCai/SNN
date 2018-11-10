@@ -10,7 +10,7 @@ import SNN_CORE
 
 K = 100
 K2 = 1e-2
-TESTING_BATCH = 10
+TESTING_BATCH = 100
 TESTING_DATA_SIZE = 50000
 learning_rate = 1e-3
 
@@ -68,7 +68,7 @@ except BaseException:
     exit(-1)
 
 
-
+'''
 w = sess.run(layer5.kernel.weight)
 w = np.swapaxes(w[:576,:],0,1)
 w = np.reshape(w,[64,9,10])
@@ -88,13 +88,13 @@ f2 = plt.subplot(512)
 f3 = plt.subplot(513)
 f4 = plt.subplot(514)
 f5 = plt.subplot(515)
-'''
+
 f1.imshow(np.reshape(np.swapaxes(1/lo4[0,:,:,:],1,2),[2,128]))
 f2.imshow(np.reshape(np.swapaxes(1/lo4[1,:,:,:],1,2),[2,128]))
 f3.imshow(np.reshape(np.swapaxes(1/lo4[2,:,:,:],1,2),[2,128]))
 f4.imshow(np.reshape(np.swapaxes(1/lo4[3,:,:,:],1,2),[2,128]))
 f5.imshow(np.reshape(np.swapaxes(1/lo4[4,:,:,:],1,2),[2,128]))
-'''
+
 f1.imshow(np.reshape(1/lo5[0,:],[1,10]))
 f2.imshow(np.reshape(1/lo5[1,:],[1,10]))
 f3.imshow(np.reshape(1/lo5[2,:],[1,10]))
@@ -118,4 +118,4 @@ while j < totalloop:
     j += 1
 acc = cum/totalloop
 print("accurate: "+repr(acc))
-'''
+
