@@ -137,7 +137,7 @@ class SNNLayer_Multi(object):
         self.in_spike = in_spike
         self.out_spike = out_spike
         if w is None:
-            self.weight_core = tf.Variable(tf.random_uniform([in_size, self.out_size], 0. / self.in_size, 48. / self.in_size, tf.float32))
+            self.weight_core = tf.Variable(tf.random_uniform([in_size, self.out_size], 0. / self.in_size, 6. / self.in_size, tf.float32))
         else:
             self.weight_core = tf.Variable(w,dtype=tf.float32)
 
