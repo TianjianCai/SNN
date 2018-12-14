@@ -50,6 +50,8 @@ K = 10
 K2 = 0.1
 learning_rate = 1e-3
 
+SAVE_PATH = os.getcwd() + '/weight_xor'
+
 cost = loss + K*wsc + K2*l2c
 
 opt = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
@@ -73,5 +75,9 @@ while(True):
         print('step '+repr(step) +', cost='+repr(c))
     if step % 5000 == 1:
         print(out)
+        w1 = sess.run(layer_in.weight)
+        w2 = sess.run(layer_out.weight)
+        np.save(SAVE_PATH+'1',w1)
+        np.save(SAVE_PATH + '2', w2)
     step = step + 1
 
