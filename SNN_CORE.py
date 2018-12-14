@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-MAX_SPIKE_TIME = 1e4
+MAX_SPIKE_TIME = 1e10
 WTA_latency = 1e-3
 
 
@@ -30,7 +30,8 @@ class SNNLayer_new(object):
         weight_sumed = tf.cumsum(weight_sorted, axis=1)
         weight_input_sumed = tf.cumsum(weight_input_mul, axis=1)
         out_spike_all = tf.divide(weight_input_sumed,tf.clip_by_value(weight_sumed-1,1e-10,1e10))
-        out_spike_large = tf.where(weight_sumed<1,MAX_SPIKE_TIME*tf.ones_like(out_spike_all),out_spike_all)
+        out_spike_ws = tf.where(weight_sumed<1,MAX_SPIKE_TIME*tf.ones_like(out_spike_all),out_spike_all)
+        out_spike_large = tf.where(out_spike_ws<input_sorted_outsize,MAX_SPIKE_TIME*tf.ones_like(out_spike_ws),out_spike_ws)
         input_sorted_outsize_slice = tf.slice(input_sorted_outsize,[0,1,0],[batch_num,self.in_size-1,self.out_size])
         input_sorted_outsize_left = tf.concat([input_sorted_outsize_slice,MAX_SPIKE_TIME*tf.ones([batch_num,1,self.out_size])],1)
         out_spike_valid = tf.where(out_spike_large>input_sorted_outsize_left,MAX_SPIKE_TIME*tf.ones_like(out_spike_large),out_spike_large)
