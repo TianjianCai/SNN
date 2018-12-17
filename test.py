@@ -43,19 +43,12 @@ input_mat[range(784),xs.astype(int)] = 1
 l1out = snn_forward(input_mat,w1,Ts,scale)
 l2out = snn_forward(l1out,w2,Ts,scale)
 
-plt.figure(1)
-plt.plot(l2out[0],label='0')
-plt.plot(l2out[1],label='1')
-plt.plot(l2out[2],label='2')
-plt.plot(l2out[3],label='3')
-plt.plot(l2out[4],label='4')
-plt.plot(l2out[5],label='5')
-plt.plot(l2out[6],label='6')
-plt.plot(l2out[7],label='7')
-plt.plot(l2out[8],label='8')
-plt.plot(l2out[9],label='9')
-plt.legend(loc='upper left')
-plt.figure(2)
-plt.imshow(np.reshape(xs,[28,28]),cmap='gray')
+fg,ax = plt.subplots(nrows=1,ncols=2)
+fg.set_size_inches(15,7)
+for i in range(10):
+    ax[0].plot(l2out[i],label=str(i))
+ax[0].legend(loc='upper left')
+
+ax[1].imshow(np.reshape(xs,[28,28]),cmap='gray')
 
 plt.show()
