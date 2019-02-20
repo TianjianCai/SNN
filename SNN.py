@@ -1,62 +1,77 @@
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+import struct
+from scipy.signal import lfilter
 import os
-from tensorflow.examples.tutorials.mnist import input_data
-import psutil
-mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
-"""
-MAX_SPIKE_TIME determine the maximum firing time. ideally maximum firing time should be inf,
-but 1e5 is plenty to use
-"""
-MAX_SPIKE_TIME = 1e5
+
+class KittiData(object):
+    def __init__(self):
+        pass
+
+    def _chartesian_to_spherical_conversion(self,xyz):
+        rtp = np.zeros_like(xyz)
+        xsq = xyz[:, 0] ** 2
+        ysq = xyz[:, 1] ** 2
+        zsq = xyz[:, 2] ** 2
+        xy = np.sqrt(xsq + ysq)
+        rtp[:, 0] = np.sqrt(xsq + ysq + zsq)
+        rtp[:, 1] = np.arctan2(xy, xyz[:, 2])
+        rtp[:, 2] = np.arctan2(xyz[:, 1], xyz[:, 0])
+        return rtp
+
+    def _rtp_to_xy(self,rtp):
+        xy = np.zeros_like(rtp)
+        xy[:, 0] = (-rtp[:, 2] + 3.14) * 180 / 3.14
+        xy[:, 1] = (rtp[:, 1]) * 180 / 3.14
+        xy[:, 2] = rtp[:, 0]
+        return xy
+
+    def _xy_to_map(self,xy):
+        scale = 2
+        map = 100 * np.ones([30 * scale, 360 * scale])
+        for element in xy:
+            if map[int((element[1] - 85) * scale - 1), int(element[0] * scale - 1)] > element[2]:
+                map[int((element[1] - 85) * scale - 1), int(element[0] * scale - 1)] = element[2]
+        return map
+
+    def getdata(self,path):
+        scan = np.fromfile(os.getcwd() + "/" + path, dtype=np.float32)
+        scan = np.reshape(scan, [-1, 4])
+        rtp = self._chartesian_to_spherical_conversion(scan)
+        xy = self._rtp_to_xy(rtp)
+        map = self._xy_to_map(xy)
+        return map
+
 
 class MnistData(object):
-    """
-    This class manage the mnist data. when initialized, self.xs_full and self.ys_full contain all the mnist data
-    Use next_batch() function to get next batch of data in xs_full and ys_full
-    """
-
-    def __init__(
-        self,
-        size,
-        path=[
-            "/save/train_data_x",
-            "/save/train_data_y"]):
-        """
-        This function will try to load saved data from path, if no saved data exists, it will load the data from
-        tensorflow's example mnist data and save it to path
-        :param size: size is a int, used to determine how many mnist data should be loaded if no saved data exists
-        :param path: path is a list with 2 strings, the first string indicate the path of xs(mnist image data), second
-                    string indicate the path of ys(label of images)
-                    ATTEN: PLEASE CREATE CORRESPONDING DIRECTORY BEFORE RUN THE CODE, OTHERWISE IOERROR MAY OCCUR
-        """
+    def __init__(self,path=["MNIST/train-images.idx3-ubyte","MNIST/train-labels.idx1-ubyte"]):
+        path[0] = os.getcwd() + "/" + path[0]
+        path[1] = os.getcwd() + "/" + path[1]
         try:
-            self.xs_full = np.load(os.getcwd() + path[0] + ".npy")
-            self.ys_full = np.load(os.getcwd() + path[1] + ".npy")
+            self.xs_full = self._read_idx(path[0]).reshape(-1,784)/255
+            ys_full = self._read_idx(path[1]).reshape(-1,1)
             print(path[0] + ", " + path[1] + " " + "loaded")
-        except BaseException:
-            self.xs_full, self.ys_full = mnist.train.next_batch(
-                size, shuffle=False)
-            np.save(os.getcwd() + path[0], self.xs_full)
-            np.save(os.getcwd() + path[1], self.ys_full)
-            print("cannot load " + path[0] + ", " + path[1] + ", get new data")
-        self.datasize = size
+        except:
+            print("cannot load " + path[0] + ", " + path[1] + ", program will exit")
+            exit(-1)
+        self.datasize = np.shape(self.xs_full)[0]
+        ys_full = np.concatenate((np.arange(self.datasize).reshape(-1,1),ys_full),axis=1)
+        self.ys_full = np.zeros([self.datasize,10])
+        self.ys_full[ys_full[:,0],ys_full[:,1]] = 1
         self.pointer = 0
 
+    def _read_idx(self,filename):
+        with open(filename, 'rb') as f:
+            zero, data_type, dims = struct.unpack('>HBB', f.read(4))
+            shape = tuple(struct.unpack('>I', f.read(4))[0] for d in range(dims))
+            return np.fromstring(f.read(), dtype=np.uint8).reshape(shape)
+
     def next_batch(self, batch_size, shuffle=False):
-        """
-        This function can get next batch of data from self.xs_full and self.ys_full
-        It uses self.pointer to decide from where to return the xs and ys
-        :param batch_size: batch_size is a int, used to determine the batch size of returned xs and ys
-        :return: return 2 arrays, the first one is image data, shape is [batch_size,784], last one is label,
-                shape is [batch_size,10]
-        """
         if shuffle:
             index = np.random.randint(self.datasize, size=batch_size)
             xs = self.xs_full[index, :]
             ys = self.ys_full[index, :]
-            del index
             return xs, ys
         else:
             if self.pointer + batch_size < self.datasize:
@@ -70,125 +85,79 @@ class MnistData(object):
             self.pointer = self.pointer + batch_size
             return xs, ys
 
-
 class SNNLayer(object):
-    """
-    This class draw the graph of a SNN layer
-    self.out is the output of SNN layer, its' shape is [batch_size, out_size]
-    self.weight is the weight of SNN layer, its' shape is [in_size, out_size]
-    """
+    def __init__(self, in_size, out_size,w=None):
+        self.MAX_SPIKE_TIME = 1e5
+        self.out_size = out_size
+        self.in_size = in_size + 1
+        if w is None:
+            self.weight = tf.Variable(tf.concat((tf.random_uniform([self.in_size - 1, self.out_size], 0. / self.in_size,
+                                                                   8. / self.in_size, tf.float32),
+                                                 tf.zeros([1, self.out_size])), axis=0))
+        else:
+            self.weight = tf.Variable(w,dtype=tf.float32)
 
-    def __init__(self, layer_in, in_size, out_size,firstlayer=False):
-        """
-        All input, output and weights are tensors.
-        :param layer_in: layer_in is a tensor, its' shape should be [batch_size,in_size]
-        :param in_size: in_size is a int, determine the size of input
-        :param out_size: out_size is a int, determine the size of output
-        """
-        in_size = in_size + 1
-        self.weight = tf.Variable(tf.random_uniform(
-            [in_size, out_size], 1. / in_size, 5. / in_size, tf.float32))
+    def forward(self,layer_in):
         batch_num = tf.shape(layer_in)[0]
         bias_layer_in = tf.ones([batch_num, 1])
         layer_in = tf.concat([layer_in, bias_layer_in], 1)
-        _, input_sorted_indices = tf.nn.top_k(-layer_in, in_size, False)
-        map_x = tf.reshape(
-            tf.tile(
-                tf.reshape(
-                    tf.range(
-                        start=0, limit=batch_num, delta=1), [
-                        batch_num, 1]), [
-                    1, in_size]), [
-                batch_num, in_size, 1])
-        input_sorted_map = tf.concat(
-            [map_x, tf.reshape(input_sorted_indices, [batch_num, in_size, 1])], 2)
-        input_sorted = tf.gather_nd(params=layer_in, indices=input_sorted_map)
-        input_sorted_outsize = tf.tile(
-            tf.reshape(
-                input_sorted, [
-                    batch_num, in_size, 1]), [
-                1, 1, out_size])
-        weight_sorted = tf.map_fn(
-            lambda x: tf.gather(
-                self.weight, tf.cast(
-                    x, tf.int32)), tf.cast(
-                input_sorted_indices, tf.float32))
+        _, input_sorted_indices = tf.nn.top_k(-layer_in, self.in_size, False)
+        input_sorted = tf.batch_gather(layer_in, input_sorted_indices)
+        input_sorted_outsize = tf.tile(tf.reshape(input_sorted, [batch_num, self.in_size, 1]), [1, 1, self.out_size])
+        weight_sorted = tf.batch_gather(
+            tf.tile(tf.reshape(self.weight, [1, self.in_size, self.out_size]), [batch_num, 1, 1]), input_sorted_indices)
         weight_input_mul = tf.multiply(weight_sorted, input_sorted_outsize)
         weight_sumed = tf.cumsum(weight_sorted, axis=1)
         weight_input_sumed = tf.cumsum(weight_input_mul, axis=1)
-        output_spike_all = tf.divide(
-            weight_input_sumed, tf.clip_by_value(tf.subtract(
-                weight_sumed, 1.), 1e-10, 1e10))
-        self.outspikeall = output_spike_all
-        valid_cond_1 = tf.where(
-            weight_sumed > 1,
-            tf.ones_like(weight_sumed),
-            tf.zeros_like(weight_sumed))
+        out_spike_all = tf.divide(weight_input_sumed, tf.clip_by_value(weight_sumed - 1, 1e-10, 1e10))
+        out_spike_ws = tf.where(weight_sumed < 1, self.MAX_SPIKE_TIME * tf.ones_like(out_spike_all), out_spike_all)
+        out_spike_large = tf.where(out_spike_ws < input_sorted_outsize,
+                                   self.MAX_SPIKE_TIME * tf.ones_like(out_spike_ws), out_spike_ws)
+        input_sorted_outsize_slice = tf.slice(input_sorted_outsize, [0, 1, 0],
+                                              [batch_num, self.in_size - 1, self.out_size])
+        input_sorted_outsize_left = tf.concat(
+            [input_sorted_outsize_slice, self.MAX_SPIKE_TIME * tf.ones([batch_num, 1, self.out_size])], 1)
+        out_spike_valid = tf.where(out_spike_large > input_sorted_outsize_left,
+                                   self.MAX_SPIKE_TIME * tf.ones_like(out_spike_large), out_spike_large)
+        out_spike = tf.reduce_min(out_spike_valid, axis=1)
+        return out_spike
 
-        def mov_left(input):
-            input_unique,input_unique_index,_ = tf.unique_with_counts(input)
-            input_unique_left = tf.slice(
-                tf.concat((input_unique,[MAX_SPIKE_TIME]),0),[1],[tf.shape(input_unique)[0]])
-            return tf.gather(input_unique_left,input_unique_index)
-        #input_sorted_outsize_left = tf.slice(tf.concat([input_sorted_outsize, MAX_SPIKE_TIME * tf.ones(
-         #   [batch_num, 1, out_size])], 1), [0, 1, 0], [batch_num, in_size, out_size])
-        input_sorted_outsize_left = tf.tile(
-            tf.reshape(tf.map_fn(mov_left, input_sorted), [
-                batch_num, in_size, 1]), [
-                1, 1, out_size])
-        valid_cond_2 = tf.where(
-            output_spike_all < input_sorted_outsize_left,
-            tf.ones_like(input_sorted_outsize),
-            tf.zeros_like(input_sorted_outsize))
-        valid_cond_both = tf.where(
-            tf.equal(
-                valid_cond_1 +
-                valid_cond_2,
-                2),
-            tf.ones_like(valid_cond_1),
-            tf.zeros_like(valid_cond_1))
-        valid_cond_both_extend = tf.concat(
-            [valid_cond_both, tf.ones([batch_num, 1, out_size])], 1)
-        output_spike_all_extent = tf.concat(
-            [output_spike_all, MAX_SPIKE_TIME * tf.ones([batch_num, 1, out_size])], 1)
-        output_valid_both = tf.concat(
-            [output_spike_all_extent, valid_cond_both_extend], 1)
+    def w_sum_cost(self):
+        threshold = 1.
+        part1 = tf.subtract(threshold, tf.reduce_sum(self.weight, 0))
+        part2 = tf.where(part1 > 0, part1, tf.zeros_like(part1))
+        return tf.reduce_mean(part2)
 
-        def select_output(both):
-            value = tf.transpose(
-                tf.slice(
-                    both, [
-                        0, 0], [
-                        in_size + 1, out_size]))
-            valid = tf.transpose(
-                tf.slice(both, [in_size + 1, 0], [in_size + 1, out_size]))
-            pos = tf.cast(tf.where(tf.equal(valid, 1)), tf.int32)
-            pos_reduced = tf.concat([tf.reshape(tf.range(0, out_size), [out_size, 1]), tf.reshape(
-                tf.segment_min(pos[:, 1], pos[:, 0]), [out_size, 1])], 1)
-            return tf.gather_nd(value, pos_reduced)
-        layer_out = tf.map_fn(select_output, output_valid_both)
-        self.out = layer_out
+    def l2_cost(self):
+        w_sqr = tf.square(self.weight)
+        return tf.reduce_mean(w_sqr)
 
 
-def w_sum_cost(W):
-    """
-    function to calculate weight sum cost.
-    :param W: a tensor, like SNNLayer.weight
-    :return: a tensor, it is a scalar
-    """
-    part1 = tf.subtract(1., tf.reduce_sum(W, 0))
-    part2 = tf.where(part1 > 0, part1, tf.zeros_like(part1))
-    return tf.reduce_mean(part2)
+class SCNNLayer(object):
+    def __init__(self, kernel_size=3, in_channel=1, out_channel=1, strides=1):
+        self.MAX_SPIKE_TIME = 1e5
+        self.kernel_size = kernel_size
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+        self.strides = strides
+        self.kernel = SNNLayer(in_size=self.kernel_size * self.kernel_size * self.in_channel,
+                                        out_size=self.out_channel)
 
-
-def l2_func(W):
-    """
-    function to calculate l2 weight regularzation
-    :param W: a tensor, like SNNLayer.weight
-    :return: a tensor, it is a scalar
-    """
-    w_sqr = tf.square(W)
-    return tf.reduce_mean(w_sqr)
+    def forward(self, layer_in):
+        input_size = tf.shape(layer_in)
+        patches = tf.extract_image_patches(images=layer_in, ksizes=[1, self.kernel_size, self.kernel_size, 1],
+                                           strides=[1, self.strides, self.strides, 1], rates=[1, 1, 1, 1],
+                                           padding="SAME")
+        patches_flatten = tf.reshape(patches,
+                                     [input_size[0], -1, self.in_channel * self.kernel_size * self.kernel_size])
+        patches_infpad = tf.where(tf.less(patches_flatten, 0.1),
+                                  self.MAX_SPIKE_TIME * tf.ones_like(patches_flatten), patches_flatten)
+        img_raw = tf.map_fn(self.kernel.forward, patches_infpad)
+        img_reshaped = tf.reshape(img_raw,
+                                  [input_size[0], tf.cast(tf.math.ceil(input_size[1] / self.strides), tf.int32),
+                                   tf.cast(tf.math.ceil(input_size[2] / self.strides), tf.int32),
+                                   self.out_channel])
+        return img_reshaped
 
 
 def loss_func(both):
@@ -216,154 +185,25 @@ def loss_func(both):
     return loss
 
 
-def cal_lr(lr, step_num):
-    bias = 1e-4
-    return (lr * np.exp(step_num * -1e-5)) + bias
+class SNNDiscrete(object):
+    def __init__(self, w, Ts, scale):
+        self.w = w
+        self.Ts = Ts
+        self.scale = scale
+        self.current = np.zeros(int(scale/Ts))
+        self.potential = np.zeros(int(scale/Ts))
 
-
-"""
-K and K2 are used to calculate cost, see paper p.6
-learning_rate will decrease exponentially with the increase of step count, see paper p.8
-"""
-K = 100
-K2 = 0.001
-learning_rate = 1e-3
-
-TRAINING_DATA_SIZE = 50000
-TESTING_DATA_SIZE = 1000
-TRAINING_BATCH = 10
-TESTING_BATCH = 100
-
-"""
-lr is learning rate to be used when training
-real_input and real_output are the layer input and expected output
-"""
-lr = tf.placeholder(tf.float32)
-real_input = tf.placeholder(tf.float32)
-real_input_01 = tf.where(
-    real_input > 0.5,
-    tf.ones_like(real_input),
-    tf.zeros_like(real_input))
-real_input_exp = tf.exp(real_input_01 * 1.79)
-real_output = tf.placeholder(tf.float32)
-
-"""
-drawing the graph of SNN
-
-"""
-layer1 = SNNLayer(real_input_exp, 784, 800,True)
-layer2 = SNNLayer(layer1.out, 800, 10)
-
-"""
-draw the graph to calculate cost to be optimized
-"""
-layer_real_output = tf.concat([layer2.out, real_output], 1)
-output_loss = tf.reduce_mean(tf.map_fn(loss_func, layer_real_output))
-WC = w_sum_cost(layer1.weight) + w_sum_cost(layer2.weight)
-L2 = l2_func(layer1.weight) + l2_func(layer2.weight)
-cost = K * WC + K2 * L2 + output_loss
-
-"""
-the step count itself and the operation to increase step count
-"""
-global_step = tf.Variable(1, dtype=tf.int64)
-step_inc_op = tf.assign(global_step, global_step + 1)
-
-"""
-draw the graph to calculate gradient and update wight operations
-"""
-grad_l1, grad_l2 = tf.gradients(
-    cost, [layer1.weight, layer2.weight], colocate_gradients_with_ops=True)
-grad_sum_sqrt = tf.clip_by_value(
-    tf.sqrt(
-        tf.reduce_sum(
-            tf.square(
-                grad_l1.values)) +
-        tf.reduce_sum(
-            tf.square(
-                grad_l2.values))),
-    1e-10,
-    10)
-grad_l1_normed = tf.divide(grad_l1.values, grad_sum_sqrt)
-grad_l2_normed = tf.divide(grad_l2.values, grad_sum_sqrt)
-grad_l1_sum = tf.reduce_sum(grad_l1_normed)
-grad_l1_abs_sum = tf.reduce_sum(tf.abs(grad_l1_normed))
-grad_l2_sum = tf.reduce_sum(grad_l2_normed)
-grad_l2_abs_sum = tf.reduce_sum(tf.abs(grad_l2_normed))
-train_op_1 = tf.scatter_add(
-    layer1.weight, grad_l1.indices, -lr * grad_l1_normed)
-train_op_2 = tf.scatter_add(
-    layer2.weight, grad_l2.indices, -lr * grad_l2_normed)
-
-"""
-draw the graph to calculate accurate
-"""
-layer_output_pos = tf.argmin(layer2.out, 1)
-real_output_pos = tf.argmax(real_output, 1)
-accurate = tf.reduce_mean(
-    tf.where(
-        tf.equal(
-            layer_output_pos, real_output_pos), tf.ones_like(
-                layer_output_pos, dtype=tf.float32), tf.zeros_like(
-                    layer_output_pos, dtype=tf.float32)))
-
-"""
-setting up tensorflow sessions
-"""
-config = tf.ConfigProto(
-    device_count={'GPU': 1}
-)
-config.gpu_options.allow_growth = True
-sess = tf.Session(config=config)
-sess.run(tf.global_variables_initializer())
-
-"""
-try to restore from previous saved checkpoint
-"""
-saver = tf.train.Saver()
-try:
-    saver.restore(sess, os.getcwd() + '/save/save.ckpt')
-    print('checkpoint loaded')
-except BaseException:
-    print('cannot load checkpoint')
-
-
-sess.graph.finalize()
-process = psutil.Process(os.getpid())
-
-"""
-set up mnist data to be used when training and testing(arrays, NOT tensors)
-"""
-mnistData_train = MnistData(
-    size=TRAINING_DATA_SIZE,
-    path=[
-        "/save/train_data_x",
-        "/save/train_data_y"])
-mnistData_test = MnistData(
-    size=TESTING_DATA_SIZE,
-    path=[
-        "/save/test_data_x",
-        "/save/test_data_y"])
-
-
-"""
-training using mnist data
-"""
-i = 1
-while(1):
-    xs, ys = mnistData_train.next_batch(TRAINING_BATCH, shuffle=True)
-    [c,l,g1_0,g1_1,g2_0,g2_1, _, _] = sess.run([cost,output_loss,grad_l1_sum,grad_l1_abs_sum,grad_l2_sum,grad_l2_abs_sum, train_op_1, train_op_2], {
-                         real_input: xs, real_output: ys, lr: cal_lr(learning_rate, sess.run(global_step))})
-    sess.run(step_inc_op)
-    if i % 100 == 0:
-        tmpstr = repr(sess.run(global_step)) + ", " + repr(c) + ", "+repr(l) + ", " + repr(g1_0) + ", " + repr(g1_1) + ", " + repr(g2_0) + ", " + repr(g2_1)
-        with open(os.getcwd() + "/cost.txt", "a") as f:
-            f.write("\n" + tmpstr)
-        print(tmpstr)
-        saver.save(sess, os.getcwd() + '/save/save.ckpt')
-        #print("checkpoint saved")
-        mem = process.memory_percent()
-        if mem > 70:
-            exit(0)
-
-    i = i + 1
+    def forward(self, x):
+        bias = np.zeros([1, np.shape(x)[1]])
+        bias[0, 0] = 1
+        x = np.append(x, bias, axis=0)
+        x_added = np.dot(np.transpose(self.w), x)
+        current = lfilter([self.scale], [1, -np.exp(-self.Ts * self.scale)], x_added)
+        potential = lfilter([self.Ts], [1, -1], current)
+        self.current = current
+        self.potential = potential
+        spikes_index = np.argmax(potential > 1, axis=1)
+        spikes_index[spikes_index == 0] = np.shape(potential)[1] - 1
+        spikes = np.zeros_like(potential)
+        spikes[np.arange(np.shape(potential)[0]), spikes_index] = 1
+        return spikes
